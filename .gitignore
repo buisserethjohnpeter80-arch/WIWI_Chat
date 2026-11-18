@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.gradle/
+.DS_Store
+.idea/
+*.iml
+android/.gradle/
+android/build/
+android/app/build/
+ios/Pods/
+ios/DerivedData/
+.env
+.env.*

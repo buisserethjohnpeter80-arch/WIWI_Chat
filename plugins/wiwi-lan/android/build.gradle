@@ -1,0 +1,15 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'app.wiwichat.lan'
+    compileSdk rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
+    defaultConfig {
+        minSdk rootProject.ext.has('minSdkVersion') ? rootProject.ext.minSdkVersion : 23
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+repositories { google(); mavenCentral() }
+dependencies { implementation project(':capacitor-android') }
