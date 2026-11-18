@@ -1,156 +1,417 @@
-import { LanService, loadIdentity, nativeLanSupported } from './lanService.js';
+// WIWIchat — First Launch Experience + real user management.
+//
+// Built on the v0.2 Wi-Fi LAN foundation (LanService / LanChatStore /
+// native @wiwichat/lan plugin). No demo users, groups or messages
+// exist anywhere in this file: the old seed contacts (Sarah, David,
+// Peter, Admin, Gwoup Klas 12, Tèm Matematik) were removed, and a
+// precise migration in demoMigration.js removes only those exact
+// demo ids from localStorage, never a general reset.
+//
+// User-visible strings live in T so the app can be translated later.
+import { LanService, nativeLanSupported } from './lanService.js';
 import { LanChatStore } from './lanStore.js';
-import { MAX_MESSAGE_LENGTH } from './lanProtocol.js';
+import { MAX_MESSAGE_LENGTH, makeIdentity } from './lanProtocol.js';
+import {
+  completeOnboarding,
+  createProfile,
+  isOnboarded,
+  loadProfile,
+  saveProfile,
+  updateProfile,
+  validatePhotoDataUrl,
+} from './profile.js';
+import { migrateDemoData } from './demoMigration.js';
+import { GROUP_CHAT_AVAILABLE, createGroup, listGroups } from './groups.js';
 import '@ionic/core/css/core.css';
 import '@ionic/core/css/normalize.css';
 import '@ionic/core/css/structure.css';
 import '@ionic/core/css/typography.css';
 import { addIcons } from 'ionicons';
-import { chatbubbles,chatbubblesOutline,people,peopleOutline,settingsOutline,settings,searchOutline,ellipsisVertical,add,arrowBack,send,attachOutline,documentTextOutline,imageOutline,cameraOutline,headsetOutline,folderOutline,wifiOutline,checkmarkDone,checkmark,checkmarkCircle,chevronForward,personOutline,notificationsOutline,informationCircleOutline,createOutline,closeOutline,personAddOutline,shieldCheckmarkOutline,moonOutline,sunnyOutline,arrowForward,cloudOfflineOutline,radioOutline,checkmarkCircleOutline,trashOutline } from 'ionicons/icons';
+import {
+  chatbubbles, chatbubblesOutline, people, peopleOutline, settingsOutline, settings,
+  searchOutline, ellipsisVertical, add, arrowBack, send, attachOutline, documentTextOutline,
+  imageOutline, cameraOutline, headsetOutline, folderOutline, wifiOutline, checkmarkDone,
+  checkmark, checkmarkCircle, chevronForward, personOutline, notificationsOutline,
+  informationCircleOutline, createOutline, closeOutline, personAddOutline,
+  shieldCheckmarkOutline, moonOutline, sunnyOutline, arrowForward, cloudOfflineOutline,
+  radioOutline, checkmarkCircleOutline, trashOutline,
+} from 'ionicons/icons';
 import './style.css';
-addIcons({chatbubbles,chatbubblesOutline,people,peopleOutline,settingsOutline,settings,searchOutline,ellipsisVertical,add,arrowBack,send,attachOutline,documentTextOutline,imageOutline,cameraOutline,headsetOutline,folderOutline,wifiOutline,checkmarkDone,checkmark,checkmarkCircle,chevronForward,personOutline,notificationsOutline,informationCircleOutline,createOutline,closeOutline,personAddOutline,shieldCheckmarkOutline,moonOutline,sunnyOutline,arrowForward,cloudOfflineOutline,radioOutline,checkmarkCircleOutline,trashOutline});
-(async()=>{const ionicPath='/ionic.esm.js';try{await import(/* @vite-ignore */ ionicPath)}catch(e){console.warn('Ionic elements could not initialize',e)}})();
-const $=s=>document.querySelector(s);const icon=(n,cl='')=>`<ion-icon class="${cl}" name="${n}" aria-hidden="true"></ion-icon>`;
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const seed=[{id:'sarah',name:'Sarah',color:'#9654ea',online:true,unread:2,messages:[{mine:false,text:'Bonjou! Ou la nan lekòl la?',time:'10:10'},{mine:true,text:'Wi, mwen la.',time:'10:12'},{mine:false,text:'N ap rankontre demen a 10è?',time:'10:13'},{mine:true,text:'Dakò, n ap la.',time:'10:14'}]},{id:'david',name:'David',color:'#2588fa',online:true,messages:[{mine:false,text:'Dokiman.pdf',time:'09:32'}]},{id:'group12',name:'Gwoup Klas 12',color:'#0cae9d',group:true,messages:[{mine:false,text:'Reyinyon a 2è PM.',time:'08:50'}]},{id:'peter',name:'Peter',color:'#f6a229',online:true,messages:[{mine:false,text:'Mèsi anpil!',time:'Yè'}]},{id:'admin',name:'Admin Lekòl',color:'#ec438a',online:true,messages:[{mine:false,text:'Anons: Egzamen vandredi.',time:'Yè'}]},{id:'math',name:'Tèm Matematik',color:'#7958e7',group:true,messages:[]}];
-const storeKey='wiwichat-demo-v1';let chats;try{const saved=JSON.parse(localStorage.getItem(storeKey));chats=Array.isArray(saved)?saved:structuredClone(seed)}catch{chats=structuredClone(seed)};
+
+addIcons({
+  chatbubbles, chatbubblesOutline, people, peopleOutline, settingsOutline, settings,
+  searchOutline, ellipsisVertical, add, arrowBack, send, attachOutline, documentTextOutline,
+  imageOutline, cameraOutline, headsetOutline, folderOutline, wifiOutline, checkmarkDone,
+  checkmark, checkmarkCircle, chevronForward, personOutline, notificationsOutline,
+  informationCircleOutline, createOutline, closeOutline, personAddOutline,
+  shieldCheckmarkOutline, moonOutline, sunnyOutline, arrowForward, cloudOfflineOutline,
+  radioOutline, checkmarkCircleOutline, trashOutline,
+});
+
+(async () => {
+  try { await import(/* @vite-ignore */ '/ionic.esm.js'); }
+  catch (e) { console.warn('Ionic elements could not initialize', e); }
+})();
+
+// ---- Localization-ready strings (English, v1) ----
+const T = {
+  welcomeTitle: 'Welcome to WIWIchat',
+  welcomeText: 'Chat and share with people nearby, even without internet.',
+  welcomeLocal: 'Uses your local Wi-Fi connection — no internet needed.',
+  getStarted: 'Get Started',
+  createProfileTitle: 'Create your profile',
+  createProfileText: 'This identity lives only on this device. No email, phone number or password needed.',
+  displayName: 'Display Name',
+  displayNamePlaceholder: 'Your name',
+  profilePhoto: 'Profile Photo',
+  profilePhotoOptional: 'Optional',
+  deviceName: 'Device Name',
+  deviceNameHint: 'Suggested automatically — you can change it.',
+  yourDeviceId: 'Your device ID',
+  continueBtn: 'Continue',
+  backBtn: 'Back',
+  connectTitle: 'Connect locally',
+  connectText: 'Connect to the same Wi-Fi network as nearby users to start chatting.',
+  wifiLan: 'Wi-Fi LAN',
+  wifiLanPrimary: 'Primary connection',
+  wifiDirect: 'Wi-Fi Direct',
+  wifiDirectLater: 'Backup feature — planned, not available yet',
+  startApp: 'Start WIWIchat',
+  noConversations: 'No conversations yet',
+  noConversationsText: 'Find people nearby and start your first conversation.',
+  findNearby: 'Find Nearby People',
+  noContacts: 'No contacts yet',
+  noContactsText: 'Discover nearby users to connect.',
+  discoverDevices: 'Discover Devices',
+  devicesOnLan: 'Devices on Wi-Fi LAN',
+  searching: 'Searching for nearby devices…',
+  noDevices: 'No nearby devices found',
+  noDevicesText: 'Make sure both devices are using the same Wi-Fi network.',
+  retry: 'Retry',
+  noGroups: 'No groups yet',
+  noGroupsText: 'Create a group to chat with multiple people.',
+  createGroup: 'Create Group',
+  groupComingSoon: 'Group chat is coming in a later version. It is not available yet, so no group was created.',
+  startConversation: 'Start your conversation',
+  myDevice: 'My device',
+  editProfile: 'Edit profile',
+  save: 'Save',
+  cancel: 'Cancel',
+  removePhoto: 'Remove photo',
+  choosePhoto: 'Choose photo',
+};
+
+// ---- Startup: migrate demo data, load the real profile ----
+migrateDemoData();
+
+let profile = loadProfile();
+let onboardingStep = !profile ? 1 : (isOnboarded(profile) ? 0 : 3);
+let draft = profile
+  ? { ...profile }
+  : { displayName: '', deviceName: 'My phone', photo: null, peerId: makeIdentity().id };
+let identity = profile ? { id: profile.peerId, name: profile.displayName } : null;
+
 const native = nativeLanSupported();
-const identity = loadIdentity();
 const history = new LanChatStore();
 const onlinePeers = new Map();
 const drafts = new Map();
 let lanStatus = native ? 'Starting Wi-Fi LAN…' : 'Chrome preview · Native app required for LAN';
 let lan;
-const state={tab:'chats',page:'home',active:null,search:'',connection:'lan',theme:localStorage.getItem('wiwi-theme')||'dark',menu:false,attachments:false};
-const activeLan = () => state.active?.startsWith('lan:');
-const peerChat = c => ({...c,kind:'lan',online:onlinePeers.has(c.id)});
-const allChats = () => [...history.chats.map(peerChat), ...chats];
-const currentChat = () => activeLan() ? (history.get(state.active.slice(4)) ? peerChat(history.get(state.active.slice(4))) : null) : chats.find(x=>x.id===state.active);
-const prettyTime = stamp => {const t=new Date(stamp);return Number.isNaN(+t)?'':t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})};
-const received = frame => {
-  const newMessage={id:frame.id,mine:false,text:frame.text,time:prettyTime(frame.sentAt),sentAt:frame.sentAt,status:'received'};
-  const visible=state.page==='conversation'&&state.active===`lan:${frame.fromId}`;
-  const wasAdded=history.add(frame.fromId,frame.fromName,newMessage,{unread:!visible});
-  if(wasAdded){render();if(!visible)toast(`New LAN message from ${frame.fromName}`)}
+let scanning = false;
+
+const state = {
+  tab: 'chats', page: 'home', active: null, search: '',
+  connection: 'lan', theme: localStorage.getItem('wiwi-theme') || 'dark',
+  menu: false, attachments: false, info: null, editingProfile: false,
 };
+
+const $ = (s) => document.querySelector(s);
+const icon = (n, cl = '') => `<ion-icon class="${cl}" name="${n}" aria-hidden="true"></ion-icon>`;
+const esc = (s) => String(s ?? '').replace(/[&<>\"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const initials = (n) => n.split(' ').slice(0, 2).map((w) => w[0]).join('').toUpperCase();
+const prettyTime = (stamp) => {
+  const t = new Date(stamp);
+  return Number.isNaN(+t) ? '' : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const isOnboarding = () => onboardingStep !== 0;
+const activeLan = () => typeof state.active === 'string' && state.active.startsWith('lan:');
+const peerChat = (c) => ({ ...c, kind: 'lan', online: onlinePeers.has(c.id) });
+const allChats = () => history.chats.map(peerChat);
+const currentChat = () => {
+  if (!activeLan()) return null;
+  const found = history.get(state.active.slice(4));
+  return found ? peerChat(found) : null;
+};
+const last = (c) => c.messages.at(-1) || {};
+const save = () => {}; // No demo store anymore; LAN history saves itself.
+
+function avatar(c, sz = '') {
+  if (c.photo) return `<div class="avatar ${sz} avatar-photo"><img src="${esc(c.photo)}" alt=""></div>`;
+  return `<div class="avatar ${sz}" style="--avatar:${c.color || '#168fff'}">${c.group ? icon('people') : esc(initials(c.name))}${c.online ? '<i class="presence"></i>' : ''}</div>`;
+}
+
+function toast(msg) {
+  let t = $('.toast');
+  if (t) t.remove();
+  t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.append(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+// ---- LAN ----
+const received = (frame) => {
+  const newMessage = { id: frame.id, mine: false, text: frame.text, time: prettyTime(frame.sentAt), sentAt: frame.sentAt, status: 'received' };
+  const visible = state.page === 'conversation' && state.active === `lan:${frame.fromId}`;
+  const wasAdded = history.add(frame.fromId, frame.fromName, newMessage, { unread: !visible });
+  if (wasAdded) { render(); if (!visible) toast(`New LAN message from ${frame.fromName}`); }
+};
+
 const startLan = async () => {
-  if(!native){lanStatus='Chrome preview · LAN requires the installed Android/iOS app';render();return}
-  if(!lan){
-    lan=new LanService(undefined,{
-      onPeers:peers=>{onlinePeers.clear();for(const p of peers){onlinePeers.set(p.id,p);history.ensure(p.id,p.name)}render()},
-      onMessage:received,
-      onStatus:status=>{lanStatus=status.running?'Connected to LAN · Searching nearby devices':status.reason||'Wi-Fi LAN is offline';render()}
+  if (!native || !identity) {
+    lanStatus = 'Chrome preview · LAN requires the installed Android/iOS app';
+    scanning = false;
+    render();
+    return;
+  }
+  if (!lan) {
+    lan = new LanService(undefined, {
+      onPeers: (peers) => {
+        scanning = false;
+        onlinePeers.clear();
+        for (const p of peers) { onlinePeers.set(p.id, p); history.ensure(p.id, p.name); }
+        render();
+      },
+      onMessage: received,
+      onStatus: (status) => {
+        lanStatus = status.running ? 'Connected to LAN · Searching nearby devices' : status.reason || 'Wi-Fi LAN is offline';
+        if (!status.running) scanning = false;
+        render();
+      },
     });
   }
-  lanStatus='Starting Wi-Fi LAN…';render();
+  scanning = true;
+  lanStatus = 'Starting Wi-Fi LAN…';
+  render();
   await lan.start(identity);
 };
 
-const save=()=>localStorage.setItem(storeKey,JSON.stringify(chats));
-const last=c=>c.messages.at(-1)||{};const initials=n=>n.split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase();
-const avatar=(c,sz='')=>`<div class="avatar ${sz}" style="--avatar:${c.color}">${c.group?icon('people'):esc(initials(c.name))}${c.online?'<i class="presence"></i>':''}</div>`;
-const header=(title,back=false,more=true)=>`<header class="header">${back?`<button class="icon-btn" data-action="back" aria-label="Back">${icon('arrowBack')}</button>`:''}<div class="header-title">${title}</div><div class="header-actions">${!back?`<button class="icon-btn" data-action="search" aria-label="Search">${icon('searchOutline')}</button>`:''}${more?`<button class="icon-btn" data-action="menu" aria-label="More options">${icon('ellipsisVertical')}</button>`:''}</div></header>`;
-const nav=()=>`<nav class="bottom-nav" aria-label="Main navigation">${[['chats','chatbubblesOutline','Chats'],['contacts','peopleOutline','Contacts'],['settings','settingsOutline','Settings']].map(([id,ic,label])=>`<button data-tab="${id}" class="nav-item ${state.tab===id?'selected':''}" aria-label="${label}" aria-current="${state.tab===id?'page':'false'}"><span class="nav-icon">${icon(state.tab===id?ic.replace('Outline',''):ic)}</span><span>${label}</span></button>`).join('')}</nav>`;
-const chatRow=c=>`<button class="chat-row" data-open="${c.kind==='lan'?`lan:${esc(c.id)}`:esc(c.id)}">${avatar({...c,online:c.kind==='lan'?c.online:false})}<span class="chat-meta"><span class="chat-top"><strong>${esc(c.name)}</strong><small>${esc(last(c).time||'')}</small></span><span class="chat-bottom"><span>${esc(last(c).text|| (c.kind==='lan'?(c.online?'Available on Wi-Fi LAN':'Offline · Messages stored locally'):'Demo conversation'))}</span>${c.unread?`<b class="unread">${c.unread}</b>`:''}</span></span>${c.kind==='lan'?'<span class="lan-pill">LAN</span>':''}</button>`;
-const peerRows=()=> [...onlinePeers.values()].map(p=>`<button class="contact-row" data-open="lan:${esc(p.id)}">${avatar({name:p.name,color:'#168fff',online:true})}<span><strong>${esc(p.name)}</strong><small>Wi-Fi LAN · Device found</small></span>${icon('chevronForward')}</button>`).join('');
-const chatsPage=()=>`${header('<span class="brand-mark">W<span class="brand-signal">⌁</span></span><span class="brand-name">WIWI<span>chat</span></span>')}<main class="scroll"><button class="connection-strip" data-action="connection">${icon('wifiOutline')}<span><b>${state.connection==='lan'?'Wi-Fi LAN':'Wi-Fi Direct'}</b><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><label class="search-box">${icon('searchOutline')}<input id="search" type="search" placeholder="Search conversations" value="${esc(state.search)}" autocomplete="off" aria-label="Search conversations"></label><div class="section-heading">Messages <span>${history.chats.length} LAN · ${chats.length} demo</span></div><section class="chat-list">${allChats().filter(c=>c.name.toLowerCase().includes(state.search.toLowerCase())).map(chatRow).join('')||'<p class="empty">No conversations yet</p>'}</section><p class="demo-disclaimer">Demo contacts like Sarah are examples only. LAN chats are marked LAN.</p></main><button class="fab" data-action="new" aria-label="New conversation">${icon('createOutline')}</button>${nav()}`;
-const contactsPage=()=>`${header('Contacts')}<main class="scroll"><div class="section-heading"><span class="online-dot"></span> Devices on Wi-Fi LAN <span>${onlinePeers.size} found</span></div>${peerRows()||`<div class="empty"><p>${esc(lanStatus)}</p><p>Connect two phones to the same Wi-Fi, open WIWIchat on both, and allow local network access.</p><button class="inline-button" data-action="scan">Try scanning again</button></div>`}<div class="section-heading">Demo contacts <span>Not real devices</span></div>${chats.filter(c=>c.online&&!c.group).map(c=>`<button class="contact-row" data-open="${esc(c.id)}">${avatar({...c,online:false})}<span><strong>${esc(c.name)}</strong><small>Demo contact · Not connected</small></span>${icon('chevronForward')}</button>`).join('')}<div class="section-heading">Demo groups</div>${chats.filter(c=>c.group).map(c=>`<button class="contact-row" data-open="${esc(c.id)}">${avatar(c)}<span><strong>${esc(c.name)}</strong><small>Group demonstration</small></span>${icon('chevronForward')}</button>`).join('')}</main><button class="fab" data-action="scan" aria-label="Rescan devices">${icon('wifiOutline')}</button>${nav()}`;
-const settingsPage=()=>`${header('Settings',false,false)}<main class="scroll settings-scroll"><div class="profile-card"><div class="avatar profile-avatar">W</div><div><strong>My device</strong><small>${esc(identity.id)}</small></div>${icon('chevronForward')}</div><h3 class="settings-label">YOUR NAME</h3><form class="nickname-form" id="nickname"><input name="nickname" aria-label="Display name" maxlength="32" value="${esc(identity.name)}" required><button type="submit">Save</button></form><h3 class="settings-label">CONNECTION</h3><div class="settings-card"><button class="setting-row" data-action="scan">${icon('wifiOutline')}<span><strong>Wi-Fi LAN</strong><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><button class="setting-row" data-action="direct">${icon('radioOutline')}<span><strong>Wi-Fi Direct</strong><small>Emergency mode · Not available yet</small></span><span class="coming">Later</span></button></div><h3 class="settings-label">PREFERENCES</h3><div class="settings-card">${[['moonOutline','Appearance','appearance'],['notificationsOutline','Notifications','notifications'],['folderOutline','Received files','files'],['shieldCheckmarkOutline','Privacy & security','privacy'],['informationCircleOutline','About WIWIchat','about']].map(([ic,label,action])=>`<button class="setting-row compact" data-action="${action}">${icon(ic)}<span><strong>${label}</strong></span>${icon('chevronForward')}</button>`).join('')}</div><p class="version">WIWIchat v0.2 · Local network prototype · Messages are not encrypted yet</p></main>${nav()}`;
-const conversation=()=>{
-  const c=currentChat();if(!c){state.page='home';return chatsPage()}
-  const isLan=c.kind==='lan';
-  return `<header class="header conversation-header"><button class="icon-btn" data-action="back" aria-label="Back">${icon('arrowBack')}</button>${avatar(c,'small')}<div class="person-title"><strong>${esc(c.name)}</strong><small>${isLan?(c.online?'Online via Wi-Fi LAN':'Offline · Cannot send now'):'Demo contact · No network connection'}</small></div><button class="icon-btn" data-action="menu" aria-label="More">${icon('ellipsisVertical')}</button></header><main class="messages" id="messages"><div class="day-label">${isLan?'Local Wi-Fi chat · Unencrypted prototype':'Demo messages'}</div>${c.messages.map(m=>`<div class="message-line ${m.mine?'mine':''}"><div class="bubble">${esc(m.text)}<div class="message-time">${esc(m.time)} ${m.mine?`<span>${m.status==='failed'?'Failed':m.status==='pending'?'Sending':m.status==='sent'?'Accepted':'Demo'}</span>`:''} ${m.mine&&m.status==='sent'?icon('checkmarkDone'):''}</div>${m.status==='failed'?`<button class="retry" data-action="retry" data-message-id="${esc(m.id)}">Retry</button>`:''}</div></div>`).join('')}</main>${state.attachments?`<div class="attachment-menu">${[['imageOutline','Photo'],['documentTextOutline','Document'],['cameraOutline','Camera'],['headsetOutline','Audio'],['folderOutline','Other files']].map(([ic,l])=>`<button data-action="file" data-kind="${l}">${icon(ic)}<span>${l}</span></button>`).join('')}</div>`:''}<form class="composer" id="compose"><button type="button" class="plus-btn" data-action="attach" aria-label="Attach file">${icon(state.attachments?'closeOutline':'add')}</button><input id="draft" name="message" maxlength="${MAX_MESSAGE_LENGTH}" value="${esc(drafts.get(state.active)||'')}" placeholder="${isLan&&!c.online?'Device offline': 'Write a message...'}" ${isLan&&!c.online?'disabled':''} autocomplete="off" aria-label="Write a message"><button class="send-btn" aria-label="Send message" type="submit" ${isLan&&!c.online?'disabled':''}>${icon('send')}</button></form><input id="file-input" type="file" hidden>`;
-};
-const modal=()=>state.menu?`<div class="overlay" data-action="dismiss"><div class="popup" role="dialog" aria-label="Options"><h3>WIWIchat</h3><p>Wi-Fi LAN messages are available only inside installed native apps. Demo contacts remain separate. Messages are not yet end-to-end encrypted.</p><button data-action="reset">Reset demo messages</button><button data-action="dismiss">Close</button></div></div>`:'';
-function render(){document.documentElement.dataset.theme=state.theme;$('#app').innerHTML=`<div class="shell">${state.page==='conversation'?conversation():state.tab==='contacts'?contactsPage():state.tab==='settings'?settingsPage():chatsPage()}${modal()}</div>`;const box=$('#messages');if(box)box.scrollTop=box.scrollHeight;}
-function openChat(id){
- state.active=id;state.page='conversation';state.attachments=false;
- if(id.startsWith('lan:')) history.clearUnread(id.slice(4));
- else {const c=chats.find(x=>x.id===id);if(c)c.unread=0;save()}
- render();
-}
-async function sendLanMessage(peerId,message){
- try{
-   await lan.send({recipientId:peerId,identity,id:message.id,text:message.text,sentAt:message.sentAt});
-   history.updateStatus(peerId,message.id,'sent');
- }catch(error){history.updateStatus(peerId,message.id,'failed');toast(String(error?.message||error))}
- render();
+async function scanAgain() {
+  if (!native) { toast('Chrome cannot scan LAN. Install the Android/iOS app.'); return; }
+  if (!identity) { toast('Finish setting up your profile first.'); return; }
+  scanning = true;
+  render();
+  await lan?.stop();
+  await startLan();
 }
 
-function toast(msg){let t=$('.toast');if(t)t.remove();t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.append(t);setTimeout(()=>t.remove(),2600)}
-document.addEventListener('click',e=>{
-  const tab=e.target.closest('[data-tab]');if(tab){state.tab=tab.dataset.tab;state.page='home';state.search='';render();return}
-  const open=e.target.closest('[data-open]');if(open){openChat(open.dataset.open);return}
-  const action=e.target.closest('[data-action]');if(!action)return;
-  switch(action.dataset.action){
-    case 'back':state.page='home';state.attachments=false;render();break;
-    case 'search':state.page='home';state.tab='chats';render();$('#search')?.focus();break;
-    case 'connection':state.tab='settings';state.page='home';render();break;
-    case 'menu':state.menu=true;render();break;
-    case 'dismiss':state.menu=false;render();break;
-    case 'reset':chats=structuredClone(seed);save();state.menu=false;render();toast('Demo restored. LAN history kept.');break;
-    case 'new':state.tab='contacts';state.page='home';render();break;
-    case 'scan':
-      if(!native){toast('Chrome cannot scan LAN. Install the Android/iOS app.');break}
-      void (async()=>{await lan?.stop();await startLan()})();
-      break;
-    case 'direct':toast('Wi-Fi Direct is not implemented in v0.2');break;
-    case 'attach':
-      if(activeLan()){toast('File transfer is planned for a later version');break}
-      state.attachments=!state.attachments;render();$('#draft')?.focus();break;
-    case 'file':$('#file-input')?.click();break;
-    case 'retry':{
-      if(!activeLan())break;
-      const id=state.active.slice(4);
-      const msg=history.get(id)?.messages.find(m=>m.id===action.dataset.messageId);
-      if(msg&&msg.status==='failed'){msg.status='pending';history.save();render();void sendLanMessage(id,msg)}
+async function sendLanMessage(peerId, message) {
+  try {
+    await lan.send({ recipientId: peerId, identity, id: message.id, text: message.text, sentAt: message.sentAt });
+    history.updateStatus(peerId, message.id, 'sent');
+  } catch (error) {
+    history.updateStatus(peerId, message.id, 'failed');
+    toast(String(error?.message || error));
+  }
+  render();
+}
+
+// ---- Shared chrome ----
+const header = (title, back = false, more = true) => `<header class="header">${back ? `<button class="icon-btn" data-action="back" aria-label="Back">${icon('arrowBack')}</button>` : ''}<div class="header-title">${title}</div><div class="header-actions">${!back ? `<button class="icon-btn" data-action="search" aria-label="Search">${icon('searchOutline')}</button>` : ''}${more ? `<button class="icon-btn" data-action="menu" aria-label="More options">${icon('ellipsisVertical')}</button>` : ''}</div></header>`;
+const nav = () => `<nav class="bottom-nav" aria-label="Main navigation">${[['chats', 'chatbubblesOutline', 'Chats'], ['contacts', 'peopleOutline', 'Contacts'], ['settings', 'settingsOutline', 'Settings']].map(([id, ic, label]) => `<button data-tab="${id}" class="nav-item ${state.tab === id ? 'selected' : ''}" aria-label="${label}" aria-current="${state.tab === id ? 'page' : 'false'}"><span class="nav-icon">${icon(state.tab === id ? ic.replace('Outline', '') : ic)}</span><span>${label}</span></button>`).join('')}</nav>`;
+
+// ---- Onboarding ----
+function onboardingPage() {
+  if (onboardingStep === 1) {
+    return `<div class="onboarding"><div class="onboarding-hero"><span class="brand-mark onboarding-mark">W<span class="brand-signal">⌁</span></span><h1>${T.welcomeTitle}</h1><p>${T.welcomeText}</p><p class="onboarding-local">${icon('wifiOutline')} ${T.welcomeLocal}</p></div><button class="primary-btn" data-action="onboarding-next">${T.getStarted}</button><p class="onboarding-steps">Step 1 of 3</p></div>`;
+  }
+  if (onboardingStep === 2) {
+    return `<div class="onboarding"><button class="icon-btn onboarding-back" data-action="onboarding-back" aria-label="Back">${icon('arrowBack')}</button><h1>${T.createProfileTitle}</h1><p>${T.createProfileText}</p><form id="onboarding-profile" class="profile-form"><label>${T.displayName}<input name="displayName" maxlength="32" value="${esc(draft.displayName)}" placeholder="${T.displayNamePlaceholder}" required autocomplete="off"></label><label>${T.profilePhoto} <span class="coming">${T.profilePhotoOptional}</span><span class="photo-row">${draft.photo ? `<img class="photo-preview" src="${esc(draft.photo)}" alt="">` : `<span class="avatar profile-avatar">${esc(initials(draft.displayName || 'W'))}</span>`}<span><button type="button" class="inline-button" data-action="choose-photo">${T.choosePhoto}</button>${draft.photo ? ` <button type="button" class="inline-button" data-action="remove-photo">${T.removePhoto}</button>` : ''}</span></span><input id="photo-input" type="file" accept="image/*" hidden></label><label>${T.deviceName}<input name="deviceName" maxlength="32" value="${esc(draft.deviceName)}" autocomplete="off"><small>${T.deviceNameHint}</small></label><p class="device-id">${T.yourDeviceId}: <code>${esc(draft.peerId)}</code></p><button class="primary-btn" type="submit">${T.continueBtn}</button></form><p class="onboarding-steps">Step 2 of 3</p></div>`;
+  }
+  return `<div class="onboarding"><button class="icon-btn onboarding-back" data-action="onboarding-back" aria-label="Back">${icon('arrowBack')}</button><h1>${T.connectTitle}</h1><p>${T.connectText}</p><div class="settings-card"><div class="setting-row">${icon('wifiOutline')}<span><strong>${T.wifiLan}</strong><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span></div><div class="setting-row">${icon('radioOutline')}<span><strong>${T.wifiDirect}</strong><small>${T.wifiDirectLater}</small></span><span class="coming">Later</span></div></div>${native ? '' : `<p class="demo-disclaimer">Chrome preview only: LAN discovery needs the installed Android/iOS app. Turn on Wi-Fi and open WIWIchat on both phones.</p>`}<button class="primary-btn" data-action="onboarding-start">${T.startApp}</button><p class="onboarding-steps">Step 3 of 3</p></div>`;
+}
+
+// ---- Home pages (no demo data anywhere) ----
+const chatRow = (c) => `<button class="chat-row" data-open="lan:${esc(c.id)}">${avatar({ ...c, online: c.online })}<span class="chat-meta"><span class="chat-top"><strong>${esc(c.name)}</strong><small>${esc(last(c).time || '')}</small></span><span class="chat-bottom"><span>${esc(last(c).text || (c.online ? 'Available on Wi-Fi LAN' : 'Offline · Messages stored locally'))}</span>${c.unread ? `<b class="unread">${c.unread}</b>` : ''}</span></span><span class="lan-pill">LAN</span></button>`;
+
+function chatsPage() {
+  const chats = allChats().filter((c) => c.name.toLowerCase().includes(state.search.toLowerCase()));
+  return `${header('<span class="brand-mark">W<span class="brand-signal">⌁</span></span><span class="brand-name">WIWI<span>chat</span></span>')}<main class="scroll"><button class="connection-strip" data-action="connection">${icon('wifiOutline')}<span><b>${T.wifiLan}</b><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><label class="search-box">${icon('searchOutline')}<input id="search" type="search" placeholder="Search conversations" value="${esc(state.search)}" autocomplete="off" aria-label="Search conversations"></label><div class="section-heading">Messages <span>${history.chats.length} LAN</span></div>${chats.length ? `<section class="chat-list">${chats.map(chatRow).join('')}</section>` : `<div class="empty-state">${icon('chatbubblesOutline', 'empty-icon')}<h2>${T.noConversations}</h2><p>${T.noConversationsText}</p><button class="primary-btn" data-action="find-nearby">${T.findNearby}</button></div>`}</main><button class="fab" data-action="find-nearby" aria-label="Find nearby people">${icon('personAddOutline')}</button>${nav()}`;
+}
+
+function contactsPage() {
+  const peers = [...onlinePeers.values()];
+  return `${header('Contacts')}<main class="scroll"><div class="section-heading"><span class="online-dot"></span> ${T.devicesOnLan} <span>${peers.length} found</span></div>${scanning ? `<div class="empty-state"><ion-spinner></ion-spinner><p>${T.searching}</p></div>` : peers.length ? peers.map((p) => `<button class="contact-row" data-open="lan:${esc(p.id)}">${avatar({ name: p.name, color: '#168fff', online: true })}<span><strong>${esc(p.name)}</strong><small>Wi-Fi LAN · Device found</small></span><span class="lan-pill">LAN</span></button>`).join('') : `<div class="empty-state">${icon('peopleOutline', 'empty-icon')}<h2>${T.noContacts}</h2><p>${T.noContactsText}</p><button class="primary-btn" data-action="scan">${T.discoverDevices}</button></div>`}${!scanning && !peers.length ? `<div class="empty-state"><h2>${T.noDevices}</h2><p>${T.noDevicesText}</p><button class="inline-button" data-action="scan">${T.retry}</button></div>` : ''}<div class="section-heading">Groups <span>${GROUP_CHAT_AVAILABLE ? '' : 'Planned'}</span></div><div class="empty-state"><h2>${T.noGroups}</h2><p>${T.noGroupsText}</p><button class="inline-button" data-action="create-group">${T.createGroup}</button></div></main><button class="fab" data-action="scan" aria-label="Rescan devices">${icon('wifiOutline')}</button>${nav()}`;
+}
+
+function settingsPage() {
+  const p = profile || draft;
+  return `${header('Settings', false, false)}<main class="scroll settings-scroll"><div class="profile-card">${avatar({ name: p.displayName || 'W', photo: p.photo, color: '#0b78ea' }, 'profile-avatar')}<div><strong>${esc(p.displayName || T.myDevice)}</strong><small>${esc(p.peerId || '')}</small></div><button class="inline-button" data-action="edit-profile">${T.editProfile}</button></div>${state.editingProfile ? `<form id="profile-form" class="profile-form"><label>${T.displayName}<input name="displayName" maxlength="32" value="${esc(p.displayName)}" required autocomplete="off"></label><label>${T.profilePhoto} <span class="coming">${T.profilePhotoOptional}</span><span class="photo-row">${p.photo ? `<img class="photo-preview" src="${esc(p.photo)}" alt="">` : ''}<span><button type="button" class="inline-button" data-action="choose-photo">${T.choosePhoto}</button>${p.photo ? ` <button type="button" class="inline-button" data-action="remove-photo">${T.removePhoto}</button>` : ''}</span></span><input id="photo-input" type="file" accept="image/*" hidden></label><label>${T.deviceName}<input name="deviceName" maxlength="32" value="${esc(p.deviceName)}" autocomplete="off"></label><span class="profile-form-actions"><button class="primary-btn" type="submit">${T.save}</button><button type="button" class="inline-button" data-action="cancel-edit-profile">${T.cancel}</button></span></form>` : ''}<h3 class="settings-label">CONNECTION</h3><div class="settings-card"><button class="setting-row" data-action="scan">${icon('wifiOutline')}<span><strong>${T.wifiLan}</strong><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><button class="setting-row" data-action="direct">${icon('radioOutline')}<span><strong>${T.wifiDirect}</strong><small>${T.wifiDirectLater}</small></span><span class="coming">Later</span></button></div><h3 class="settings-label">PREFERENCES</h3><div class="settings-card">${[['moonOutline', 'Appearance', 'appearance'], ['notificationsOutline', 'Notifications', 'notifications'], ['folderOutline', 'Received files', 'files'], ['shieldCheckmarkOutline', 'Privacy & security', 'privacy'], ['informationCircleOutline', 'About WIWIchat', 'about']].map(([ic, label, action]) => `<button class="setting-row compact" data-action="${action}">${icon(ic)}<span><strong>${label}</strong></span>${icon('chevronForward')}</button>`).join('')}</div><p class="version">WIWIchat v0.2 · Local network prototype · Messages are not encrypted yet</p></main>${nav()}`;
+}
+
+function conversation() {
+  const c = currentChat();
+  if (!c) { state.page = 'home'; return chatsPage(); }
+  return `<header class="header conversation-header"><button class="icon-btn" data-action="back" aria-label="Back">${icon('arrowBack')}</button>${avatar(c, 'small')}<div class="person-title"><strong>${esc(c.name)}</strong><small>${c.online ? 'Online via Wi-Fi LAN' : 'Offline · Cannot send now'}</small></div><button class="icon-btn" data-action="menu" aria-label="More">More</button></header><main class="messages" id="messages">${c.messages.length ? '' : `<div class="day-label">${T.startConversation}</div>`}${c.messages.map((m) => `<div class="message-line ${m.mine ? 'mine' : ''}"><div class="bubble">${esc(m.text)}<div class="message-time">${esc(m.time)} ${m.mine ? `<span>${m.status === 'failed' ? 'Failed' : m.status === 'pending' ? 'Sending' : m.status === 'sent' ? 'Accepted' : ''}</span>` : ''} ${m.mine && m.status === 'sent' ? icon('checkmarkDone') : ''}</div>${m.status === 'failed' ? `<button class="retry" data-action="retry" data-message-id="${esc(m.id)}">Retry</button>` : ''}</div></div>`).join('')}</main><form class="composer" id="compose"><button type="button" class="plus-btn" data-action="attach" aria-label="Attach file">${icon(state.attachments ? 'closeOutline' : 'add')}</button><input id="draft" name="message" maxlength="${MAX_MESSAGE_LENGTH}" value="${esc(drafts.get(state.active) || '')}" placeholder="${!c.online ? 'Device offline' : 'Write a message...'}" ${!c.online ? 'disabled' : ''} autocomplete="off" aria-label="Write a message"><button class="send-btn" aria-label="Send message" type="submit" ${!c.online ? 'disabled' : ''}>${icon('send')}</button></form><input id="file-input" type="file" hidden>`;
+}
+
+const modal = () => {
+  if (state.info === 'groups') return `<div class="overlay" data-action="dismiss-info"><div class="popup" role="dialog" aria-label="Groups"><h3>Groups</h3><p>${T.groupComingSoon}</p><button data-action="dismiss-info">Close</button></div></div>`;
+  if (!state.menu) return '';
+  return `<div class="overlay" data-action="dismiss"><div class="popup" role="dialog" aria-label="Options"><h3>WIWIchat</h3><p>Wi-Fi LAN messages are available only inside installed native apps. Messages are not yet end-to-end encrypted.</p><button data-action="dismiss">Close</button></div></div>`;
+};
+
+function render() {
+  document.documentElement.dataset.theme = state.theme;
+  if (isOnboarding()) {
+    $('#app').innerHTML = `<div class="shell">${onboardingPage()}</div>`;
+    return;
+  }
+  $('#app').innerHTML = `<div class="shell">${state.page === 'conversation' ? conversation() : state.tab === 'contacts' ? contactsPage() : state.tab === 'settings' ? settingsPage() : chatsPage()}${modal()}</div>`;
+  const box = $('#messages');
+  if (box) box.scrollTop = box.scrollHeight;
+}
+
+function openChat(id) {
+  state.active = id;
+  state.page = 'conversation';
+  state.attachments = false;
+  if (id.startsWith('lan:')) history.clearUnread(id.slice(4));
+  render();
+}
+
+// ---- Events ----
+document.addEventListener('click', (e) => {
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { state.tab = tab.dataset.tab; state.page = 'home'; state.search = ''; render(); return; }
+  const open = e.target.closest('[data-open]');
+  if (open) { openChat(open.dataset.open); return; }
+  const action = e.target.closest('[data-action]');
+  if (!action) return;
+  switch (action.dataset.action) {
+    case 'back': state.page = 'home'; state.attachments = false; render(); break;
+    case 'search': state.page = 'home'; state.tab = 'chats'; render(); $('#search')?.focus(); break;
+    case 'connection': state.tab = 'settings'; state.page = 'home'; render(); break;
+    case 'menu': state.menu = true; render(); break;
+    case 'dismiss': state.menu = false; render(); break;
+    case 'dismiss-info': state.info = null; render(); break;
+    case 'find-nearby': state.tab = 'contacts'; state.page = 'home'; render(); void scanAgain(); break;
+    case 'scan': void scanAgain(); break;
+    case 'direct': toast('Wi-Fi Direct is not implemented in v0.2'); break;
+    case 'create-group': {
+      const result = createGroup();
+      if (!result.ok) { state.info = 'groups'; render(); }
       break;
     }
-    case 'appearance':state.theme=state.theme==='dark'?'light':'dark';localStorage.setItem('wiwi-theme',state.theme);render();break;
-    case 'notifications':case 'files':case 'privacy':case 'about':toast('Coming in a future development phase');break;
+    case 'edit-profile': state.editingProfile = true; render(); break;
+    case 'cancel-edit-profile': state.editingProfile = false; draft = profile ? { ...profile } : draft; render(); break;
+    case 'choose-photo': $('#photo-input')?.click(); break;
+    case 'remove-photo': draft.photo = null; if (profile && state.editingProfile) draft = { ...profile, photo: null }; render(); break;
+    case 'onboarding-next': onboardingStep = 2; render(); break;
+    case 'onboarding-back': onboardingStep = Math.max(1, onboardingStep - 1); render(); break;
+    case 'onboarding-start': {
+      if (!profile) break;
+      profile = completeOnboarding();
+      identity = { id: profile.peerId, name: profile.displayName };
+      onboardingStep = 0;
+      render();
+      void startLan();
+      break;
+    }
+    case 'attach': toast('File transfer is planned for a later version'); break;
+    case 'file': $('#file-input')?.click(); break;
+    case 'retry': {
+      if (!activeLan()) break;
+      const id = state.active.slice(4);
+      const msg = history.get(id)?.messages.find((m) => m.id === action.dataset.messageId);
+      if (msg && msg.status === 'failed') { msg.status = 'pending'; history.save(); render(); void sendLanMessage(id, msg); }
+      break;
+    }
+    case 'appearance': state.theme = state.theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('wiwi-theme', state.theme); render(); break;
+    case 'notifications': case 'files': case 'privacy': case 'about': toast('Coming in a future development phase'); break;
   }
 });
-document.addEventListener('input',e=>{
-  if(e.target.id==='draft'){drafts.set(state.active,e.target.value);return}
-  if(e.target.id==='search'){
-    state.search=e.target.value;
-    const list=$('.chat-list');if(list)list.innerHTML=allChats().filter(c=>c.name.toLowerCase().includes(state.search.toLowerCase())).map(chatRow).join('')||'<p class="empty">No conversations found</p>';
+
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'draft') { drafts.set(state.active, e.target.value); return; }
+  if (e.target.id === 'search') {
+    state.search = e.target.value;
+    const list = $('.chat-list');
+    if (list) list.innerHTML = allChats().filter((c) => c.name.toLowerCase().includes(state.search.toLowerCase())).map(chatRow).join('') || '<p class="empty">No conversations found</p>';
   }
 });
-document.addEventListener('submit',e=>{
- if(e.target.id==='nickname'){
-   e.preventDefault();
-   const name=e.target.elements.nickname.value.trim().slice(0,32);
-   if(!name){toast('Enter a name');return}
-   identity.name=name;localStorage.setItem('wiwi-lan-identity-v1',JSON.stringify(identity));
-   if(native){void (async()=>{await lan?.stop();await startLan()})()}
-   else render();
-   toast('Device name saved');return;
- }
- if(e.target.id!=='compose')return;e.preventDefault();
- const input=$('#draft'),value=input.value.trim();if(!value)return;
- if(activeLan()){
-   const peerId=state.active.slice(4);
-   if(!onlinePeers.has(peerId)){toast('Device offline');return}
-   drafts.delete(state.active);
-   const sentAt=new Date().toISOString();
-   const msg={id:crypto.randomUUID(),mine:true,text:value,time:prettyTime(sentAt),sentAt,status:'pending'};
-   history.add(peerId,onlinePeers.get(peerId)?.name,msg);
-   state.attachments=false;render();void sendLanMessage(peerId,msg);
-   return;
- }
- const c=chats.find(x=>x.id===state.active);if(!c)return;
- drafts.delete(state.active);
- c.messages.push({mine:true,text:value,time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});save();state.attachments=false;render();toast('Saved locally as demo. Not delivered.');
+
+document.addEventListener('submit', (e) => {
+  if (e.target.id === 'onboarding-profile') {
+    e.preventDefault();
+    const name = e.target.elements.displayName.value.trim();
+    const device = e.target.elements.deviceName.value.trim();
+    if (!name) { toast('Enter a display name'); return; }
+    try {
+      profile = profile
+        ? saveProfile({ ...profile, displayName: name, deviceName: device || 'My phone', photo: draft.photo })
+        : createProfile({ displayName: name, deviceName: device || 'My phone', photo: draft.photo, peerId: draft.peerId });
+      draft = { ...profile };
+      identity = { id: profile.peerId, name: profile.displayName };
+      onboardingStep = 3;
+      render();
+      void startLan();
+    } catch (err) { toast(String(err?.message || err)); }
+    return;
+  }
+  if (e.target.id === 'profile-form') {
+    e.preventDefault();
+    const name = e.target.elements.displayName.value.trim();
+    const device = e.target.elements.deviceName.value.trim();
+    if (!name) { toast('Enter a display name'); return; }
+    try {
+      profile = updateProfile({ displayName: name, deviceName: device || 'My phone', photo: draft.photo });
+      draft = { ...profile };
+      identity = { id: profile.peerId, name: profile.displayName };
+      state.editingProfile = false;
+      render();
+      toast('Profile saved');
+      if (native) { void (async () => { await lan?.stop(); await startLan(); })(); }
+    } catch (err) { toast(String(err?.message || err)); }
+    return;
+  }
+  if (e.target.id !== 'compose') return;
+  e.preventDefault();
+  const input = $('#draft');
+  const value = input.value.trim();
+  if (!value || !activeLan()) return;
+  const peerId = state.active.slice(4);
+  if (!onlinePeers.has(peerId)) { toast('Device offline'); return; }
+  drafts.delete(state.active);
+  const sentAt = new Date().toISOString();
+  const msg = { id: crypto.randomUUID(), mine: true, text: value, time: prettyTime(sentAt), sentAt, status: 'pending' };
+  history.add(peerId, onlinePeers.get(peerId)?.name, msg);
+  state.attachments = false;
+  render();
+  void sendLanMessage(peerId, msg);
 });
-document.addEventListener('change',e=>{
- if(e.target.id==='file-input'){
-   const f=e.target.files?.[0];if(!f)return;
-   if(activeLan()){toast('File transfer is not implemented');return}
-   const c=chats.find(x=>x.id===state.active);
-   c.messages.push({mine:true,text:`📎 ${f.name} (demo only)`,time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})});
-   save();state.attachments=false;render();toast('Filename saved in demo; file not transferred.');
- }
+
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'photo-input') {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        draft.photo = validatePhotoDataUrl(String(reader.result));
+        render();
+      } catch (err) { toast(String(err?.message || err)); }
+    };
+    reader.readAsDataURL(f);
+    return;
+  }
+  if (e.target.id === 'file-input') {
+    toast('File transfer is not implemented');
+  }
 });
+
 render();
-void startLan();
+if (!isOnboarding()) void startLan();
+else if (onboardingStep === 3 && profile) void startLan();

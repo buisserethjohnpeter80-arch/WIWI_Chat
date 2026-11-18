@@ -2,6 +2,37 @@
 
 Built as a small, reviewable increment on the attached **WIWIchat Foundation v0.1**. Keep the original Ionic Core + vanilla JavaScript + Vite + Capacitor design and both light/dark appearances. New communication features run through the local `@wiwichat/lan` Capacitor plugin.
 
+## First Launch Experience (this branch)
+
+A fresh install shows no demo users, groups or messages at all. The first
+launch is a 3-step onboarding: **Welcome** ("Welcome to WIWIchat" —
+"Chat and share with people nearby, even without internet."), **Create
+Local Profile** (Display Name required, Profile Photo optional, Device
+Name suggested and editable, unique `WIWI-` + 20 hex device id generated
+— never the user name), and **Connect Locally** (same-Wi-Fi instructions,
+real LAN status, Wi-Fi Direct shown as planned / "Later"). No email,
+phone number or password is asked for, and nothing is registered on
+any internet server.
+
+- Empty home: Chats shows "No conversations yet", Contacts shows
+  "No contacts yet" and only real discovered devices, Groups shows
+  "No groups yet". A first real conversation starts empty with
+  "Start your conversation" and no automatic first message.
+- Demo removal is precise, not a general reset: `src/demoMigration.js`
+  removes only the exact known demo ids (sarah, david, group12, peter,
+  admin, math) from `wiwichat-demo-v1` and keeps any other chat. Real
+  LAN history (`wiwichat-lan-chats-v1`) is never touched by the migration.
+- Returning users skip onboarding: the local profile, LAN history and
+  groups are restored. A valid older v0.2 identity with a custom name
+  is adopted as the profile instead of forcing onboarding again.
+- Profile photo is local only in v1: the LAN protocol carries name +
+  peer id, not a photo, so peers see initials, not the photo.
+- Group chat is NOT available yet: the LAN protocol is 1-to-1 only.
+  The Groups section says so clearly and creates no fake group.
+  Likewise there is no Connect Request / Accept-Decline flow, because
+  the protocol does not support it — tapping a discovered device opens
+  a 1-to-1 chat directly.
+
 ## Implemented in source
 
 - Bonjour/mDNS service discovery, using the shared service type `_wiwichat._tcp`.
@@ -9,9 +40,9 @@ Built as a small, reviewable increment on the attached **WIWIchat Foundation v0.
 - Cross-platform newline-delimited JSON protocol v1, UTF-8, capped at 16 KiB per frame and 4,000 characters per text.
 - Native device announcements and peer lost/found events.
 - LAN text message send/receive with a technical `ack` for network acceptance, **not** read receipts or a guarantee of durable delivery.
-- Local history stored separately from legacy demo contacts/messages; duplicate message IDs discarded; send failures can be retried.
+- Local history stored separately from demo contacts/messages; duplicate message IDs discarded; send failures can be retried.
 - Device display name editing and persistent random service ID; UI status, nearby peers, and online/offline sending.
-- Chrome browser preview still displays the UI, but cannot discover devices or send LAN messages. It always labels sample contacts as demos.
+- Chrome browser preview still displays the UI, but cannot discover devices or send LAN messages. It shows an empty home with no demo contacts.
 - Google Fonts network dependency removed; offline interface uses system sans-serif if Inter is not installed.
 
 ## Not production ready
@@ -76,7 +107,7 @@ Both a CocoaPods podspec and SPM `Package.swift` are included in the plugin. Det
 1. Install this **same v0.2 build** on each phone.
 2. Connect both to the same Wi-Fi access point. Disable guest Wi-Fi/client isolation and avoid VPNs that isolate devices.
 3. Open WIWIchat in the foreground on each phone. iOS should ask for local network permission on first use.
-4. Under Contacts, check that a real device appears in **Devices on Wi-Fi LAN**. Ignore sample contacts Sarah, David etc.
+4. Under Contacts, check that a real device appears in **Devices on Wi-Fi LAN**.
 5. Send `Bonjou A` from A to B. Confirm B receives it, and A displays `Accepted` only after an ACK is received.
 6. Reply `Bonjou B` from B to A. Disable Wi-Fi on B; confirm A stops showing B online and cannot send.
 7. Restore the connection; attempt a send, inspect retry on failure and verify duplicate message IDs are not shown twice.
@@ -102,10 +133,12 @@ ACK:
 
 ## Testing status of this delivery
 
-- `node --test` tests for shared JS protocol and history passed in the build environment.
-- Syntax parsing succeeded for JavaScript and the Swift source (`swiftc -frontend -parse`); this is **not** an iOS build.
-- The native Android plugin and Swift source have **not** been built against actual SDKs here.
-- Full `npm install` / Vite build could not complete here because registry access timed out. Muse must run them in the repository with dependencies available.
+- `node --test` tests for shared JS protocol, history, profile, demo
+  migration and group availability passed in the build environment
+  (see `docs/JS_TEST_RESULTS.txt` in the v0.2 delivery and the new
+  `tests/profile.test.js`).
+- The native Android plugin and Swift source have **not** been built
+  against actual SDKs here, and no two-phone test has been run here.
 
 ## Integration safety when using Muse
 
