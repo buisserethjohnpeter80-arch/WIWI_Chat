@@ -41,3 +41,9 @@
 .empty-state .primary-btn{width:auto;padding:13px 22px;margin-top:8px}
 .empty-icon{font-size:56px;color:var(--muted)}
 .empty-state ion-spinner{width:32px;height:32px;color:var(--accent)}
+
+/* Inline SVG icons: always visible (nav, FAB, section headings). */
+.sicon{width:23px;height:23px;display:block}
+.nav-icon .sicon{width:23px;height:23px}
+.fab .sicon{width:28px;height:28px}
+.section-heading .sicon{width:19px;height:19px;display:inline-block;vertical-align:-3px;margin-right:2px}
