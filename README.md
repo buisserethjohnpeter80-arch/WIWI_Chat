@@ -145,3 +145,20 @@ ACK:
 This zip is built from the original attached Foundation v0.1, **not from the live current GitHub main branch**. If the GitHub repository already contains edits, Muse must fetch `origin/main`, compare before changing anything, and merge file-by-file. Never replace `src/main.js`, `src/style.css`, `package.json` or `README.md` blindly. Preserve actual user changes over the reference zip. Use a feature branch if any conflict exists; review a Pull Request before merging.
 
 See `docs/MUSE_INSTRUCTIONS_KREYOL.txt` and `docs/CHANGELOG_v0.2.md`.
+
+## Logo
+
+Approved design (2026-11-18): white bold **W** with a small blue Wi-Fi
+symbol above it, in a dark rounded square, plus the **WIWIchat** wordmark
+(WIWI white, chat blue, blue swoosh underneath). See `docs/LOGO.md`.
+
+The icon and the wordmark are two separate assets, each used in its own
+place: the icon (`assets/icon.svg`, `public/logo-icon.svg`) is the app
+launcher icon, the header mark and the onboarding hero; the wordmark
+(`assets/wordmark.svg`, `public/wordmark.svg`) is the text, used where
+the name itself is shown. The header keeps the name as live text, not
+as an image.
+
+To generate the Android launcher icon and splash screen from the SVGs,
+run `npm run assets` after `npx cap add android` (the GitHub workflow
+does this step).

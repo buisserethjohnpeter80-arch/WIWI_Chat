@@ -9,7 +9,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --test tests/*.test.js",
     "check": "npm run test && npm run build",
-    "ios:privacy": "node scripts/configure-ios-privacy.mjs"
+    "ios:privacy": "node scripts/configure-ios-privacy.mjs",
+    "assets": "npx @capacitor/assets generate"
   },
   "dependencies": {
     "@ionic/core": "^8.0.0",
