@@ -47,3 +47,12 @@
 .nav-icon .sicon{width:23px;height:23px}
 .fab .sicon{width:28px;height:28px}
 .section-heading .sicon{width:19px;height:19px;display:inline-block;vertical-align:-3px;margin-right:2px}
+
+/* Settings sub-pages: toggle switches, info text and the danger action. */
+.toggle{width:46px;height:27px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);flex-shrink:0;position:relative}
+.toggle::after{content:"";position:absolute;top:2px;left:2px;width:21px;height:21px;border-radius:50%;background:#8e9bad;transition:left .15s,background .15s}
+.toggle.on{background:var(--accent);border-color:var(--accent)}
+.toggle.on::after{left:21px;background:#fff}
+.info-text{padding:14px 20px;color:var(--muted);font-size:12px;line-height:1.6}
+.danger-btn{display:block;width:calc(100% - 32px);margin:8px 16px 0;padding:14px;border:1px solid #7a2b2b;border-radius:15px;background:transparent;color:#ff6b6b;font-size:14px;font-weight:600}
+.danger-btn:active{background:rgba(255,107,107,.12)}

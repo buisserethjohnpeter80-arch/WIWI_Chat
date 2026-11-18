@@ -22,6 +22,7 @@ import {
 } from './profile.js';
 import { migrateDemoData } from './demoMigration.js';
 import { GROUP_CHAT_AVAILABLE, createGroup, listGroups } from './groups.js';
+import { loadAppSettings, saveAppSettings } from './appSettings.js';
 import '@ionic/core/css/core.css';
 import '@ionic/core/css/normalize.css';
 import '@ionic/core/css/structure.css';
@@ -113,6 +114,7 @@ let identity = profile ? { id: profile.peerId, name: profile.displayName } : nul
 
 const native = nativeLanSupported();
 const history = new LanChatStore();
+let appSettings = loadAppSettings();
 const onlinePeers = new Map();
 const drafts = new Map();
 let lanStatus = native ? 'Starting Wi-Fi LAN…' : 'Chrome preview · Native app required for LAN';
@@ -177,11 +179,35 @@ function toast(msg) {
 }
 
 // ---- LAN ----
+// Short alert beep for an incoming message (Notifications setting).
+function beep() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 880;
+    gain.gain.value = 0.08;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.12);
+    osc.onended = () => { ctx.close().catch(() => {}); };
+  } catch { /* audio unavailable on this device */ }
+}
+
 const received = (frame) => {
   const newMessage = { id: frame.id, mine: false, text: frame.text, time: prettyTime(frame.sentAt), sentAt: frame.sentAt, status: 'received' };
   const visible = state.page === 'conversation' && state.active === `lan:${frame.fromId}`;
   const wasAdded = history.add(frame.fromId, frame.fromName, newMessage, { unread: !visible });
-  if (wasAdded) { render(); if (!visible) toast(`New LAN message from ${frame.fromName}`); }
+  if (wasAdded) {
+    render();
+    if (!visible && appSettings.notifications) {
+      toast(`New LAN message from ${frame.fromName}`);
+      if (appSettings.sound) beep();
+      if (appSettings.vibrate && navigator.vibrate) navigator.vibrate(100);
+    }
+  }
 };
 
 const startLan = async () => {
@@ -261,9 +287,40 @@ function contactsPage() {
   return `${header('Contacts')}<main class="scroll"><div class="section-heading"><span class="online-dot"></span> ${T.devicesOnLan} <span>${peers.length} found</span></div>${scanning ? `<div class="empty-state"><ion-spinner></ion-spinner><p>${T.searching}</p></div>` : peers.length ? peers.map((p) => `<button class="contact-row" data-open="lan:${esc(p.id)}">${avatar({ name: p.name, color: '#168fff', online: true })}<span><strong>${esc(p.name)}</strong><small>Wi-Fi LAN · Device found</small></span><span class="lan-pill">LAN</span></button>`).join('') : `<div class="empty-state">${icon('peopleOutline', 'empty-icon')}<h2>${T.noContacts}</h2><p>${T.noContactsText}</p><button class="primary-btn" data-action="scan">${T.discoverDevices}</button></div>`}${!scanning && !peers.length ? `<div class="empty-state"><h2>${T.noDevices}</h2><p>${T.noDevicesText}</p><button class="inline-button" data-action="scan">${T.retry}</button></div>` : ''}<div class="section-heading">${sicon('peopleOutline', 'section-icon')} Groups <span>${GROUP_CHAT_AVAILABLE ? '' : 'Planned'}</span></div><div class="empty-state"><h2>${T.noGroups}</h2><p>${T.noGroupsText}</p><button class="inline-button" data-action="create-group">${T.createGroup}</button></div></main><button class="fab" data-action="scan" aria-label="Rescan devices">${sicon('wifiOutline')}</button>${nav()}`;
 }
 
+// ---- Settings sub-pages: every row opens real logic, not a dead end. ----
+function subPage() {
+  const back = (title) => header(title, true, false);
+  switch (state.page) {
+    case 'lan': {
+      const p = profile || {};
+      return `${back('Wi-Fi LAN')}<main class="scroll settings-scroll"><div class="settings-card"><div class="setting-row">${icon('wifiOutline')}<span><strong>Status</strong><small>${esc(lanStatus)}</small></span></div><div class="setting-row">${icon('peopleOutline')}<span><strong>Devices nearby</strong><small>${onlinePeers.size} found on this Wi-Fi network</small></span></div><div class="setting-row">${icon('personOutline')}<span><strong>Your device</strong><small>${esc(p.displayName || '')} · ${esc(p.peerId || '')}</small></span></div></div><button class="primary-btn" data-action="scan" style="margin:18px 16px 0;width:calc(100% - 32px)">Rescan nearby devices</button>${native ? '' : '<p class="info-text">Chrome preview: real LAN discovery needs the installed Android/iOS app on the same Wi-Fi network.</p>'}</main>${nav()}`;
+    }
+    case 'direct':
+      return `${back('Wi-Fi Direct')}<main class="scroll settings-scroll"><div class="settings-card"><div class="setting-row">${icon('radioOutline')}<span><strong>Emergency mode</strong><small>Not available yet</small></span><span class="coming">Later</span></div></div><p class="info-text">Wi-Fi Direct will let two phones chat without a Wi-Fi router, for emergencies when there is no network. It is planned for a later version — nothing is faked here, so this page stays honest until it is built.</p></main>${nav()}`;
+    case 'appearance': {
+      const row = (value, label) => `<button class="setting-row" data-action="set-theme" data-theme="${value}">${icon(value === 'dark' ? 'moonOutline' : 'sunnyOutline')}<span><strong>${label}</strong></span><span class="radio ${state.theme === value ? 'active' : ''}"></span></button>`;
+      return `${back('Appearance')}<main class="scroll settings-scroll"><div class="settings-card">${row('dark', 'Dark')}${row('light', 'Light')}</div><p class="info-text">Your choice is saved on this device and applies immediately.</p></main>${nav()}`;
+    }
+    case 'notifications': {
+      const row = (key, label, hint) => `<button class="setting-row" data-action="toggle-notif" data-key="${key}">${icon('notificationsOutline')}<span><strong>${label}</strong><small>${hint}</small></span><span class="toggle ${appSettings[key] ? 'on' : ''}" aria-label="${label} ${appSettings[key] ? 'on' : 'off'}"></span></button>`;
+      return `${back('Notifications')}<main class="scroll settings-scroll"><div class="settings-card">${row('notifications', 'New message alerts', 'Show an alert when a LAN message arrives')}${row('sound', 'Sound', 'Play a short beep with the alert')}${row('vibrate', 'Vibrate', 'Vibrate the phone with the alert')}</div><p class="info-text">Alerts are in-app only. There is no server and no push notification.</p></main>${nav()}`;
+    }
+    case 'files':
+      return `${back('Received files')}<main class="scroll settings-scroll"><div class="empty-state">${icon('folderOutline', 'empty-icon')}<h2>No files received yet</h2><p>File transfer is not available in v0.2 yet. When it arrives, files people send you over LAN will appear here.</p></div></main>${nav()}`;
+    case 'privacy': {
+      const p = profile || {};
+      return `${back('Privacy & security')}<main class="scroll settings-scroll"><div class="settings-card"><div class="setting-row">${icon('personOutline')}<span><strong>Your device ID</strong><small>${esc(p.peerId || '')}</small></span></div><div class="setting-row">${icon('shieldCheckmarkOutline')}<span><strong>Encryption</strong><small>Messages are not end-to-end encrypted yet</small></span></div></div><p class="info-text">WIWIchat has no account and no server: your name and messages stay on this phone and on the local Wi-Fi network. Only chat on a Wi-Fi network you trust.</p><button class="danger-btn" data-action="clear-history">${state.confirmClear ? 'Tap again to delete all conversations' : 'Clear all conversations'}</button></main>${nav()}`;
+    }
+    case 'about':
+      return `${back('About WIWIchat')}<main class="scroll settings-scroll"><div class="settings-card"><div class="setting-row">${icon('informationCircleOutline')}<span><strong>WIWIchat</strong><small>Version 0.2.0 · Local network prototype</small></span></div><div class="setting-row">${icon('wifiOutline')}<span><strong>Works now</strong><small>Wi-Fi LAN discovery, 1-to-1 chat, onboarding, empty states</small></span></div><div class="setting-row">${icon('radioOutline')}<span><strong>Planned</strong><small>Wi-Fi Direct, file transfer, groups, encryption</small></span></div></div><p class="info-text">Chat with people nearby, even without internet. No account, no server, no phone number — just the same Wi-Fi network.</p></main>${nav()}`;
+    default:
+      return '';
+  }
+}
+
 function settingsPage() {
   const p = profile || draft;
-  return `${header('Settings', false, false)}<main class="scroll settings-scroll"><div class="profile-card">${avatar({ name: p.displayName || 'W', photo: p.photo, color: '#0b78ea' }, 'profile-avatar')}<div><strong>${esc(p.displayName || T.myDevice)}</strong><small>${esc(p.peerId || '')}</small></div><button class="inline-button" data-action="edit-profile">${T.editProfile}</button></div>${state.editingProfile ? `<form id="profile-form" class="profile-form"><label>${T.displayName}<input name="displayName" maxlength="32" value="${esc(p.displayName)}" required autocomplete="off"></label><label>${T.profilePhoto} <span class="coming">${T.profilePhotoOptional}</span><span class="photo-row">${p.photo ? `<img class="photo-preview" src="${esc(p.photo)}" alt="">` : ''}<span><button type="button" class="inline-button" data-action="choose-photo">${T.choosePhoto}</button>${p.photo ? ` <button type="button" class="inline-button" data-action="remove-photo">${T.removePhoto}</button>` : ''}</span></span><input id="photo-input" type="file" accept="image/*" hidden></label><label>${T.deviceName}<input name="deviceName" maxlength="32" value="${esc(p.deviceName)}" autocomplete="off"></label><span class="profile-form-actions"><button class="primary-btn" type="submit">${T.save}</button><button type="button" class="inline-button" data-action="cancel-edit-profile">${T.cancel}</button></span></form>` : ''}<h3 class="settings-label">CONNECTION</h3><div class="settings-card"><button class="setting-row" data-action="scan">${icon('wifiOutline')}<span><strong>${T.wifiLan}</strong><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><button class="setting-row" data-action="direct">${icon('radioOutline')}<span><strong>${T.wifiDirect}</strong><small>${T.wifiDirectLater}</small></span><span class="coming">Later</span></button></div><h3 class="settings-label">PREFERENCES</h3><div class="settings-card">${[['moonOutline', 'Appearance', 'appearance'], ['notificationsOutline', 'Notifications', 'notifications'], ['folderOutline', 'Received files', 'files'], ['shieldCheckmarkOutline', 'Privacy & security', 'privacy'], ['informationCircleOutline', 'About WIWIchat', 'about']].map(([ic, label, action]) => `<button class="setting-row compact" data-action="${action}">${icon(ic)}<span><strong>${label}</strong></span>${icon('chevronForward')}</button>`).join('')}</div><p class="version">WIWIchat v0.2 · Local network prototype · Messages are not encrypted yet</p></main>${nav()}`;
+  return `${header('Settings', false, false)}<main class="scroll settings-scroll"><div class="profile-card">${avatar({ name: p.displayName || 'W', photo: p.photo, color: '#0b78ea' }, 'profile-avatar')}<div><strong>${esc(p.displayName || T.myDevice)}</strong><small>${esc(p.peerId || '')}</small></div><button class="inline-button" data-action="edit-profile">${T.editProfile}</button></div>${state.editingProfile ? `<form id="profile-form" class="profile-form"><label>${T.displayName}<input name="displayName" maxlength="32" value="${esc(p.displayName)}" required autocomplete="off"></label><label>${T.profilePhoto} <span class="coming">${T.profilePhotoOptional}</span><span class="photo-row">${p.photo ? `<img class="photo-preview" src="${esc(p.photo)}" alt="">` : ''}<span><button type="button" class="inline-button" data-action="choose-photo">${T.choosePhoto}</button>${p.photo ? ` <button type="button" class="inline-button" data-action="remove-photo">${T.removePhoto}</button>` : ''}</span></span><input id="photo-input" type="file" accept="image/*" hidden></label><label>${T.deviceName}<input name="deviceName" maxlength="32" value="${esc(p.deviceName)}" autocomplete="off"></label><span class="profile-form-actions"><button class="primary-btn" type="submit">${T.save}</button><button type="button" class="inline-button" data-action="cancel-edit-profile">${T.cancel}</button></span></form>` : ''}<h3 class="settings-label">CONNECTION</h3><div class="settings-card"><button class="setting-row" data-action="lan">${icon('wifiOutline')}<span><strong>${T.wifiLan}</strong><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><button class="setting-row" data-action="direct">${icon('radioOutline')}<span><strong>${T.wifiDirect}</strong><small>${T.wifiDirectLater}</small></span><span class="coming">Later</span></button></div><h3 class="settings-label">PREFERENCES</h3><div class="settings-card">${[['moonOutline', 'Appearance', 'appearance'], ['notificationsOutline', 'Notifications', 'notifications'], ['folderOutline', 'Received files', 'files'], ['shieldCheckmarkOutline', 'Privacy & security', 'privacy'], ['informationCircleOutline', 'About WIWIchat', 'about']].map(([ic, label, action]) => `<button class="setting-row compact" data-action="${action}">${icon(ic)}<span><strong>${label}</strong></span>${icon('chevronForward')}</button>`).join('')}</div><p class="version">WIWIchat v0.2 · Local network prototype · Messages are not encrypted yet</p></main>${nav()}`;
 }
 
 function conversation() {
@@ -284,7 +341,7 @@ function render() {
     $('#app').innerHTML = `<div class="shell">${onboardingPage()}</div>`;
     return;
   }
-  $('#app').innerHTML = `<div class="shell">${state.page === 'conversation' ? conversation() : state.tab === 'contacts' ? contactsPage() : state.tab === 'settings' ? settingsPage() : chatsPage()}${modal()}</div>`;
+  $('#app').innerHTML = `<div class="shell">${state.page === 'conversation' ? conversation() : ['lan', 'direct', 'appearance', 'notifications', 'files', 'privacy', 'about'].includes(state.page) ? subPage() : state.tab === 'contacts' ? contactsPage() : state.tab === 'settings' ? settingsPage() : chatsPage()}${modal()}</div>`;
   const box = $('#messages');
   if (box) box.scrollTop = box.scrollHeight;
 }
@@ -300,7 +357,7 @@ function openChat(id) {
 // ---- Events ----
 document.addEventListener('click', (e) => {
   const tab = e.target.closest('[data-tab]');
-  if (tab) { state.tab = tab.dataset.tab; state.page = 'home'; state.search = ''; render(); return; }
+  if (tab) { state.tab = tab.dataset.tab; state.page = 'home'; state.search = ''; state.confirmClear = false; render(); return; }
   const open = e.target.closest('[data-open]');
   if (open) { openChat(open.dataset.open); return; }
   const action = e.target.closest('[data-action]');
@@ -314,7 +371,7 @@ document.addEventListener('click', (e) => {
     case 'dismiss-info': state.info = null; render(); break;
     case 'find-nearby': state.tab = 'contacts'; state.page = 'home'; render(); void scanAgain(); break;
     case 'scan': void scanAgain(); break;
-    case 'direct': toast('Wi-Fi Direct is not implemented in v0.2'); break;
+
     case 'create-group': {
       const result = createGroup();
       if (!result.ok) { state.info = 'groups'; render(); }
@@ -344,8 +401,32 @@ document.addEventListener('click', (e) => {
       if (msg && msg.status === 'failed') { msg.status = 'pending'; history.save(); render(); void sendLanMessage(id, msg); }
       break;
     }
-    case 'appearance': state.theme = state.theme === 'dark' ? 'light' : 'dark'; localStorage.setItem('wiwi-theme', state.theme); render(); break;
-    case 'notifications': case 'files': case 'privacy': case 'about': toast('Coming in a future development phase'); break;
+    case 'lan': case 'direct': case 'appearance': case 'notifications': case 'files': case 'privacy': case 'about':
+      state.page = action.dataset.action; state.confirmClear = false; render(); break;
+    case 'set-theme': {
+      state.theme = action.dataset.theme === 'light' ? 'light' : 'dark';
+      localStorage.setItem('wiwi-theme', state.theme);
+      render();
+      break;
+    }
+    case 'toggle-notif': {
+      const key = action.dataset.key;
+      if (key && key in appSettings) {
+        appSettings = saveAppSettings({ ...appSettings, [key]: !appSettings[key] });
+        render();
+      }
+      break;
+    }
+    case 'clear-history': {
+      if (!state.confirmClear) { state.confirmClear = true; render(); break; }
+      history.clearAll();
+      state.confirmClear = false;
+      state.page = 'home';
+      state.tab = 'chats';
+      render();
+      toast('All conversations deleted');
+      break;
+    }
   }
 });
 
