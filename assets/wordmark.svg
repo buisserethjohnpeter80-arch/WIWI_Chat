@@ -1,4 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 180" width="700" height="180">
-  <text x="10" y="112" font-family="Arial, Helvetica, sans-serif" font-size="110" font-weight="800" letter-spacing="-2" fill="#ffffff">WIWI</text><text x="268" y="112" font-family="Arial, Helvetica, sans-serif" font-size="110" font-weight="800" letter-spacing="-2" fill="#2ea8ff">chat</text>
-  <path d="M 15 150 C 200 130, 500 125, 685 145" fill="none" stroke="#2ea8ff" stroke-width="8" stroke-linecap="round"/>
+  <!-- WIWIchat wordmark — Montserrat ExtraBold Italic.
+       WIWI white, chat in the app blue #168fff, blue swoosh underneath.
+       In the app the name is live text with the same treatment, not an image. -->
+  <text x="10" y="112" font-family="Montserrat, 'Arial Black', Arial, sans-serif" font-size="104" font-weight="800" font-style="italic" letter-spacing="-3" fill="#ffffff">WIWI</text>
+  <text x="262" y="112" font-family="Montserrat, 'Arial Black', Arial, sans-serif" font-size="104" font-weight="800" font-style="italic" letter-spacing="-3" fill="#168fff">chat</text>
+  <path d="M 15 150 C 200 130, 500 125, 685 145" fill="none" stroke="#168fff" stroke-width="8" stroke-linecap="round"/>
 </svg>

@@ -37,5 +37,5 @@ truth and the PNGs are regenerated from them.
 ## Colours
 
 - Dark background: `#080c15` → `#05080f` (icon gradient `#101a2c` → `#05080f`)
-- Blue: `#2ea8ff` (Wi-Fi, "chat", swoosh)
+- Blue: `#168fff` — the app accent (Wi-Fi, "chat", swoosh)
 - White: `#ffffff` (W, "WIWI")
