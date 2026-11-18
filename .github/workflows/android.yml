@@ -36,7 +36,9 @@ jobs:
         run: npm install
 
       - name: Run tests
-        run: npm test
+        # --if-present: main (v0.1) has no "test" script yet; the
+        # script exists from v0.2 onward, where this step runs the tests.
+        run: npm test --if-present
 
       - name: Build web app
         run: npm run build
