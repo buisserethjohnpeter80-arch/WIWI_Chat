@@ -46,6 +46,12 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Generate Android icon and splash from logo
+        # assets/icon.svg + assets/splash.svg -> Android launcher icon
+        # and splash screen. Runs only when those files exist.
+        run: |
+          if [ -f assets/icon.svg ]; then npm run assets; else echo "No logo assets yet, keeping default icon."; fi
+
       - name: Sync Android project
         run: npx cap sync android
 
