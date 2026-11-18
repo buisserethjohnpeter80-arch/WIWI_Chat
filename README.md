@@ -145,3 +145,35 @@ ACK:
 This zip is built from the original attached Foundation v0.1, **not from the live current GitHub main branch**. If the GitHub repository already contains edits, Muse must fetch `origin/main`, compare before changing anything, and merge file-by-file. Never replace `src/main.js`, `src/style.css`, `package.json` or `README.md` blindly. Preserve actual user changes over the reference zip. Use a feature branch if any conflict exists; review a Pull Request before merging.
 
 See `docs/MUSE_INSTRUCTIONS_KREYOL.txt` and `docs/CHANGELOG_v0.2.md`.
+
+## Logo
+
+Approved design (2026-11-18): white bold **W** with a small blue Wi-Fi
+symbol above it, in a dark rounded square, plus the **WIWIchat** wordmark
+(WIWI white, chat blue, blue swoosh underneath). See `docs/LOGO.md`.
+
+The icon and the wordmark are two separate assets, each used in its own
+place: the icon (`assets/icon.svg`, `public/logo-icon.svg`) is the app
+launcher icon, the header mark and the onboarding hero; the wordmark
+(`assets/wordmark.svg`, `public/wordmark.svg`) is the text, used where
+the name itself is shown. The header keeps the name as live text, not
+as an image.
+
+To generate the Android launcher icon and splash screen from the SVGs,
+run `npm run assets` after `npx cap add android` (the GitHub workflow
+does this step).
+
+## Settings (v0.2, real logic)
+
+Every Settings row opens a working sub-page — no dead ends:
+
+- **Wi-Fi LAN**: live status, devices nearby, your device ID, and a Rescan button.
+- **Wi-Fi Direct**: honest info page — emergency mode, planned, not available yet.
+- **Appearance**: Dark / Light choice, saved on the device and applied immediately.
+- **Notifications**: in-app-only toggles (alerts, sound, vibrate), saved locally and
+  honoured when a LAN message arrives while you are elsewhere in the app.
+- **Received files**: honest empty state — file transfer is not in v0.2 yet.
+- **Privacy & security**: your device ID, the honest encryption status
+  (not end-to-end encrypted yet, trusted Wi-Fi only), and Clear all
+  conversations (two taps to confirm, wipes the local LAN history).
+- **About WIWIchat**: version 0.2.0, what works now and what is planned.

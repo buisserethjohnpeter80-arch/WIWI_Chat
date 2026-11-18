@@ -43,6 +43,11 @@ export class LanChatStore {
     const chat = this.get(id);
     if (chat) { chat.unread = 0; this.save(); }
   }
+  // Remove every conversation and message (Privacy & security setting).
+  clearAll() {
+    this.chats = [];
+    this.save();
+  }
   save() {
     try {
       const safe = this.chats.map(({ id, name, messages }) => ({ id, name, messages }));
