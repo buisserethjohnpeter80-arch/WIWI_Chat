@@ -1,0 +1,17 @@
+MUSE: WIWIchat v0.2, etap 1 kominikasyon Wi-Fi LAN
+
+Repository: https://github.com/buisserethjohnpeter80-arch/WIWI_Chat
+Objektif: entegre ZIP WIWIchat_LAN_v0.2.zip ki soti nan Foundation v0.1, san efase travay ki deja egziste sou GitHub.
+
+KONTRÈN ENPÒTAN:
+1. Premye travay la se clone/fetch repo a epi analize origin/main. Pa ranplase src/main.js, src/style.css, package.json oswa lòt fichye dirèkteman. Konpare chak fichye ZIP ak sa ki deja sou main. Kenbe tout amelyorasyon ki sou repo a.
+2. Kreye branch feature/wiwichat-lan-v0.2 anvan chanjman yo. Entegre nouvo fichye yo, epi adapte fichye ki deja la yo san kraze UI/UX, Ionic/Capacitor, dark/light mode ak demo Chrome.
+3. Verifye `@wiwichat/lan` plugin lokal la. Android: NsdManager + TCP listener. iOS: Network.framework NWBrowser/NWListener. Bonjour type egzak la se `_wiwichat._tcp`, peerId `WIWI-` + 20 karaktè hexadecimal. Verifye menm JSON v1, ACK, limit 16 KiB, id, non ak timestamp sou 2 platfòm yo.
+4. Verifye aplikasyon iOS la gen NSLocalNetworkUsageDescription ak NSBonjourServices. Si Info.plist gen kle sa yo deja, fè merge olye ou double yo. Android dwe genyen pèmisyon ki nesesè yo. Pa ajoute ACCESS_LOCAL_NETWORK runtime san verifye target SDK ak dokiman Android.
+5. Kouri: npm install, npm test, npm run build, npx cap sync android. Compile avèk Android SDK epi tcheke erreurs. Si Mac/Xcode disponib, kouri npx cap sync ios, verifye plugin Swift la compile, epi fè tès. Si Xcode pa disponib, di sa klèman.
+6. Fè tès sou 2 telefòn reyèl: dekouvèt A-B, A voye B, B voye A, offline, retry. Android-Android, Android-iOS, iOS-iOS si aparèy disponib. Ekri rezilta yo. Chrome se preview sèlman, pa fè simulasyon ki sanble ak vrè koneksyon.
+7. Sa k poko fèt: Wi-Fi Direct, encryption E2E, pairing, background reception, file transfer ak gwoup reyèl. Pa make yo `done`.
+8. Si tès yo reyisi epi pa gen konfli, prepare commit `Implement WIWIchat Wi-Fi LAN foundation v0.2`. Fè push sou branch feature/wiwichat-lan-v0.2 epi kreye Pull Request pou main. Pa force push, pa rebase oswa overwrite commit lòt moun. Pa fè merge otomatikman si gen konfli oswa tès ki pa pase. Si pwopriyetè a mande dirèk main, mande li revize PR la avan.
+9. Voye rapò: fichye modifye, tès ki pase/echwe, difikilte, URL branch, URL PR, epi hash/lyen commit GitHub aktyèl la. Pa envante yon URL commit ki pa egziste.
+
+Anvan nenpòt commit, konsilte README.md ak docs/CHANGELOG_v0.2.md ki nan ZIP a.
