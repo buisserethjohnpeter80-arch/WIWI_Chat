@@ -10,7 +10,12 @@ export function loadIdentity(storage = localStorage) {
   try { value = JSON.parse(storage.getItem(IDENTITY_KEY)); } catch { /* ignore invalid old data */ }
   if (!isPeerId(value?.id)) value = makeIdentity();
   value.name = validateName(value.name || 'My phone');
-  storage.setItem(IDENTITY_KEY, JSON.stringify(value));
+  try {
+    storage.setItem(IDENTITY_KEY, JSON.stringify(value));
+  } catch {
+    // Storage unavailable: the identity still works for this session,
+    // it just is not persisted. Never throw from a read-or-create.
+  }
   return value;
 }
 
