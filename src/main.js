@@ -22,6 +22,7 @@ import {
   validatePhotoDataUrl,
 } from './profile.js';
 import { migrateDemoData } from './demoMigration.js';
+import { applyDiscoveredPeers, createNearbyDevices } from './nearbyDevices.js';
 import { GROUP_CHAT_AVAILABLE, createGroup, listGroups } from './groups.js';
 import { loadAppSettings, saveAppSettings } from './appSettings.js';
 import '@ionic/core/css/core.css';
@@ -86,6 +87,8 @@ const T = {
   noConversations: 'No conversations yet',
   noConversationsText: 'Find people nearby and start your first conversation.',
   findNearby: 'Find Nearby People',
+  startChat: 'Start Chat',
+  openChat: 'Open Chat',
   noContacts: 'No contacts yet',
   noContactsText: 'Discover nearby users to connect.',
   discoverDevices: 'Discover Devices',
@@ -124,8 +127,11 @@ let identity = profile ? { id: profile.peerId, name: profile.displayName } : nul
 
 const native = nativeLanSupported();
 const history = new LanChatStore();
+// Ephemeral discovery state only — never persisted, never a
+// conversation. See nearbyDevices.js.
+const onlinePeers = createNearbyDevices();
+let selectedPeer = null;
 let appSettings = loadAppSettings();
-const onlinePeers = new Map();
 const drafts = new Map();
 let lanStatus = native ? 'Starting Wi-Fi LAN…' : 'Chrome preview · Native app required for LAN';
 let lan;
@@ -269,8 +275,10 @@ const startLan = async () => {
     lan = new LanService(undefined, {
       onPeers: (peers) => {
         scanning = false;
-        onlinePeers.clear();
-        for (const p of peers) { onlinePeers.set(p.id, p); history.ensure(p.id, p.name); }
+        // Discovery only updates the nearby list. It never creates
+        // a conversation: chats appear only after the user taps
+        // Start Chat on a device, or a real message arrives.
+        applyDiscoveredPeers(onlinePeers, peers);
         render();
       },
       onMessage: received,
@@ -332,7 +340,7 @@ function chatsPage() {
 
 function contactsPage() {
   const peers = [...onlinePeers.values()];
-  return `${header('Contacts')}<main class="scroll"><div class="section-heading"><span class="online-dot"></span> ${T.devicesOnLan} <span>${peers.length} found</span></div>${scanning ? `<div class="empty-state"><ion-spinner></ion-spinner><p>${T.searching}</p></div>` : peers.length ? peers.map((p) => `<button class="contact-row" data-open="lan:${esc(p.id)}">${avatar({ name: p.name, color: '#168fff', online: true })}<span><strong>${esc(p.name)}</strong><small>Wi-Fi LAN · Device found</small></span><span class="lan-pill">LAN</span></button>`).join('') : `<div class="empty-state">${icon('peopleOutline', 'empty-icon')}<h2>${T.noContacts}</h2><p>${T.noContactsText}</p><button class="primary-btn" data-action="scan">${T.discoverDevices}</button></div>`}${!scanning && !peers.length ? `<div class="empty-state"><h2>${T.noDevices}</h2><p>${T.noDevicesText}</p><button class="inline-button" data-action="scan">${T.retry}</button>${native && !lanStatus.startsWith('Connected') && !lanStatus.startsWith('Starting') ? `<p class="info-text">${T.connectPermission}</p>` : ''}</div>` : ''}<div class="section-heading">${sicon('peopleOutline', 'section-icon')} Groups <span>${GROUP_CHAT_AVAILABLE ? '' : 'Planned'}</span></div><div class="empty-state"><h2>${T.noGroups}</h2><p>${T.noGroupsText}</p><button class="inline-button" data-action="create-group">${T.createGroup}</button></div></main><button class="fab" data-action="scan" aria-label="Rescan devices">${sicon('wifiOutline')}</button>${nav()}`;
+  return `${header('Contacts')}<main class="scroll"><div class="section-heading"><span class="online-dot"></span> ${T.devicesOnLan} <span>${peers.length} found</span></div>${scanning ? `<div class="empty-state"><ion-spinner></ion-spinner><p>${T.searching}</p></div>` : peers.length ? peers.map((p) => `<button class="contact-row" data-device="${esc(p.id)}">${avatar({ name: p.name, color: '#168fff', online: true })}<span><strong>${esc(p.name)}</strong><small>Wi-Fi LAN · Device found</small></span><span class="lan-pill">LAN</span></button>`).join('') : `<div class="empty-state">${icon('peopleOutline', 'empty-icon')}<h2>${T.noContacts}</h2><p>${T.noContactsText}</p><button class="primary-btn" data-action="scan">${T.discoverDevices}</button></div>`}${!scanning && !peers.length ? `<div class="empty-state"><h2>${T.noDevices}</h2><p>${T.noDevicesText}</p><button class="inline-button" data-action="scan">${T.retry}</button>${native && !lanStatus.startsWith('Connected') && !lanStatus.startsWith('Starting') ? `<p class="info-text">${T.connectPermission}</p>` : ''}</div>` : ''}<div class="section-heading">${sicon('peopleOutline', 'section-icon')} Groups <span>${GROUP_CHAT_AVAILABLE ? '' : 'Planned'}</span></div><div class="empty-state"><h2>${T.noGroups}</h2><p>${T.noGroupsText}</p><button class="inline-button" data-action="create-group">${T.createGroup}</button></div></main><button class="fab" data-action="scan" aria-label="Rescan devices">${sicon('wifiOutline')}</button>${nav()}`;
 }
 
 // ---- Settings sub-pages: every row opens real logic, not a dead end. ----
@@ -378,6 +386,11 @@ function conversation() {
 }
 
 const modal = () => {
+  if (state.info === 'device' && selectedPeer) {
+    const hasChat = Boolean(history.get(selectedPeer.id));
+    const online = onlinePeers.has(selectedPeer.id);
+    return `<div class="overlay" data-action="dismiss-info"><div class="popup" role="dialog" aria-label="Nearby device"><h3>${esc(selectedPeer.name)}</h3><p>${online ? 'Online via Wi-Fi LAN' : 'Offline'} · ${esc(selectedPeer.id)}</p>${hasChat ? `<button data-action="open-chat">${T.openChat}</button>` : `<button data-action="start-chat">${T.startChat}</button>`}<button data-action="dismiss-info">Close</button></div></div>`;
+  }
   if (state.info === 'groups') return `<div class="overlay" data-action="dismiss-info"><div class="popup" role="dialog" aria-label="Groups"><h3>Groups</h3><p>${T.groupComingSoon}</p><button data-action="dismiss-info">Close</button></div></div>`;
   if (!state.menu) return '';
   return `<div class="overlay" data-action="dismiss"><div class="popup" role="dialog" aria-label="Options"><h3>WIWIchat</h3><p>Wi-Fi LAN messages are available only inside installed native apps. Messages are not yet end-to-end encrypted.</p><button data-action="dismiss">Close</button></div></div>`;
@@ -406,12 +419,24 @@ function openChat(id) {
   render();
 }
 
+// Selecting a nearby device only shows its detail card with an
+// explicit Start Chat action. It never creates a conversation.
+function selectDevice(id) {
+  const peer = onlinePeers.get(id);
+  if (!peer) { toast('Device offline'); return; }
+  selectedPeer = peer;
+  state.info = 'device';
+  render();
+}
+
 // ---- Events ----
 document.addEventListener('click', (e) => {
   const tab = e.target.closest('[data-tab]');
   if (tab) { state.tab = tab.dataset.tab; state.page = 'home'; state.search = ''; state.confirmClear = false; render(); return; }
   const open = e.target.closest('[data-open]');
   if (open) { openChat(open.dataset.open); return; }
+  const device = e.target.closest('[data-device]');
+  if (device) { selectDevice(device.dataset.device); return; }
   const action = e.target.closest('[data-action]');
   if (!action) return;
   switch (action.dataset.action) {
@@ -420,7 +445,25 @@ document.addEventListener('click', (e) => {
     case 'connection': state.tab = 'settings'; state.page = 'home'; render(); break;
     case 'menu': state.menu = true; render(); break;
     case 'dismiss': state.menu = false; render(); break;
-    case 'dismiss-info': state.info = null; render(); break;
+    case 'dismiss-info': state.info = null; selectedPeer = null; render(); break;
+    case 'start-chat': {
+      if (!selectedPeer) break;
+      if (!onlinePeers.has(selectedPeer.id)) { toast('Device offline'); state.info = null; selectedPeer = null; render(); break; }
+      // The only place selecting a discovered device creates a
+      // conversation: an explicit user action, never discovery.
+      history.ensure(selectedPeer.id, selectedPeer.name);
+      const id = selectedPeer.id;
+      state.info = null; selectedPeer = null;
+      openChat(`lan:${id}`);
+      break;
+    }
+    case 'open-chat': {
+      if (!selectedPeer) break;
+      const id = selectedPeer.id;
+      state.info = null; selectedPeer = null;
+      openChat(`lan:${id}`);
+      break;
+    }
     case 'find-nearby': state.tab = 'contacts'; state.page = 'home'; render(); void scanAgain(); break;
     case 'scan': void scanAgain(); break;
 

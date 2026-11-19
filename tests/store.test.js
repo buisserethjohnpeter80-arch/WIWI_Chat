@@ -11,6 +11,12 @@ test('deduplicates incoming messages and persists history',()=>{
   a.clearUnread(peer);assert.equal(a.get(peer).unread,0);
   const restored=new LanChatStore(storage);assert.equal(restored.get(peer).messages[0].text,'Hello');
 });
+test('ensure reopens the existing conversation instead of creating a duplicate',()=>{
+ const a=new LanChatStore(fakeStorage());
+ const first=a.ensure(peer,'Marie');
+ const second=a.ensure(peer,'Marie');
+ assert.equal(first,second);assert.equal(a.chats.length,1);
+});
 test('status changes and retention cap',()=>{
  const a=new LanChatStore(fakeStorage());
  for(let i=0;i<302;i++)a.add(peer,'Nearby',{id:`m${i}`,mine:true,text:'Hi',status:'pending'});
