@@ -89,6 +89,10 @@ const T = {
   findNearby: 'Find Nearby People',
   startChat: 'Start Chat',
   openChat: 'Open Chat',
+  chatRequests: 'Chat requests',
+  wantsToChat: 'Wants to chat with you',
+  accept: 'Accept',
+  decline: 'Decline',
   noContacts: 'No contacts yet',
   noContactsText: 'Discover nearby users to connect.',
   discoverDevices: 'Discover Devices',
@@ -131,6 +135,7 @@ const history = new LanChatStore();
 // conversation. See nearbyDevices.js.
 const onlinePeers = createNearbyDevices();
 let selectedPeer = null;
+let selectedRequest = null;
 let appSettings = loadAppSettings();
 const drafts = new Map();
 let lanStatus = native ? 'Starting Wi-Fi LAN…' : 'Chrome preview · Native app required for LAN';
@@ -252,6 +257,21 @@ function beep() {
 
 const received = (frame) => {
   const newMessage = { id: frame.id, mine: false, text: frame.text, time: prettyTime(frame.sentAt), sentAt: frame.sentAt, status: 'received' };
+  if (history.isBlocked(frame.fromId)) return; // declined before: ignore silently
+  if (!history.get(frame.fromId)) {
+    // First message from someone new: a chat request, not a chat.
+    // The message stays hidden until the user accepts or declines.
+    const outcome = history.addRequest(frame.fromId, frame.fromName, newMessage);
+    if (outcome === 'request') {
+      render();
+      if (appSettings.notifications) {
+        toast(`New chat request from ${frame.fromName}`);
+        if (appSettings.sound) beep();
+        if (appSettings.vibrate && navigator.vibrate) navigator.vibrate(100);
+      }
+    }
+    return;
+  }
   const visible = state.page === 'conversation' && state.active === `lan:${frame.fromId}`;
   const wasAdded = history.add(frame.fromId, frame.fromName, newMessage, { unread: !visible });
   if (wasAdded) {
@@ -335,7 +355,7 @@ const chatRow = (c) => `<button class="chat-row" data-open="lan:${esc(c.id)}">${
 
 function chatsPage() {
   const chats = allChats().filter((c) => c.name.toLowerCase().includes(state.search.toLowerCase()));
-  return `${header('<span class="brand-name">WIWI<span>chat</span></span>')}<main class="scroll"><button class="connection-strip" data-action="connection">${icon('wifiOutline')}<span><b>${T.wifiLan}</b><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><label class="search-box">${icon('searchOutline')}<input id="search" type="search" placeholder="Search conversations" value="${esc(state.search)}" autocomplete="off" aria-label="Search conversations"></label><div class="section-heading">Messages <span>${history.chats.length} LAN</span></div>${chats.length ? `<section class="chat-list">${chats.map(chatRow).join('')}</section>` : `<div class="empty-state">${icon('chatbubblesOutline', 'empty-icon')}<h2>${T.noConversations}</h2><p>${T.noConversationsText}</p><button class="primary-btn" data-action="find-nearby">${T.findNearby}</button></div>`}</main><button class="fab" data-action="find-nearby" aria-label="Find nearby people">${sicon('personAddOutline')}</button>${nav()}`;
+  return `${header('<span class="brand-name">WIWI<span>chat</span></span>')}<main class="scroll"><button class="connection-strip" data-action="connection">${icon('wifiOutline')}<span><b>${T.wifiLan}</b><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span>${icon('chevronForward')}</button><label class="search-box">${icon('searchOutline')}<input id="search" type="search" placeholder="Search conversations" value="${esc(state.search)}" autocomplete="off" aria-label="Search conversations"></label>${history.requests.length ? `<div class="section-heading">${T.chatRequests} <span>${history.requests.length}</span></div><section class="chat-list">${history.requests.map((r) => `<button class="chat-row" data-request="${esc(r.id)}">${avatar({ name: r.name, color: '#168fff', online: onlinePeers.has(r.id) })}<span class="chat-meta"><span class="chat-top"><strong>${esc(r.name)}</strong></span><span class="chat-bottom"><span>${esc(T.wantsToChat)}</span></span></span><span class="lan-pill">LAN</span></button>`).join('')}</section>` : ''}<div class="section-heading">Messages <span>${history.chats.length} LAN</span></div>${chats.length ? `<section class="chat-list">${chats.map(chatRow).join('')}</section>` : `<div class="empty-state">${icon('chatbubblesOutline', 'empty-icon')}<h2>${T.noConversations}</h2><p>${T.noConversationsText}</p><button class="primary-btn" data-action="find-nearby">${T.findNearby}</button></div>`}</main><button class="fab" data-action="find-nearby" aria-label="Find nearby people">${sicon('personAddOutline')}</button>${nav()}`;
 }
 
 function contactsPage() {
@@ -386,6 +406,11 @@ function conversation() {
 }
 
 const modal = () => {
+  if (state.info === 'request' && selectedRequest) {
+    const req = history.getRequest(selectedRequest);
+    if (!req) return '';
+    return `<div class="overlay" data-action="dismiss-info"><div class="popup" role="dialog" aria-label="Chat request"><h3>${esc(req.name)}</h3><p>${esc(T.wantsToChat)}</p><button data-action="accept-request">${T.accept}</button><button data-action="decline-request">${T.decline}</button><button data-action="dismiss-info">Close</button></div></div>`;
+  }
   if (state.info === 'device' && selectedPeer) {
     const hasChat = Boolean(history.get(selectedPeer.id));
     const online = onlinePeers.has(selectedPeer.id);
@@ -429,6 +454,15 @@ function selectDevice(id) {
   render();
 }
 
+// Opening a chat request only shows who it is from. The messages
+// stay hidden until Accept, and Decline deletes them.
+function selectRequest(id) {
+  if (!history.getRequest(id)) return;
+  selectedRequest = id;
+  state.info = 'request';
+  render();
+}
+
 // ---- Events ----
 document.addEventListener('click', (e) => {
   const tab = e.target.closest('[data-tab]');
@@ -437,6 +471,8 @@ document.addEventListener('click', (e) => {
   if (open) { openChat(open.dataset.open); return; }
   const device = e.target.closest('[data-device]');
   if (device) { selectDevice(device.dataset.device); return; }
+  const request = e.target.closest('[data-request]');
+  if (request) { selectRequest(request.dataset.request); return; }
   const action = e.target.closest('[data-action]');
   if (!action) return;
   switch (action.dataset.action) {
@@ -445,7 +481,22 @@ document.addEventListener('click', (e) => {
     case 'connection': state.tab = 'settings'; state.page = 'home'; render(); break;
     case 'menu': state.menu = true; render(); break;
     case 'dismiss': state.menu = false; render(); break;
-    case 'dismiss-info': state.info = null; selectedPeer = null; render(); break;
+    case 'dismiss-info': state.info = null; selectedPeer = null; selectedRequest = null; render(); break;
+    case 'accept-request': {
+      if (!selectedRequest) break;
+      const id = selectedRequest;
+      history.acceptRequest(id);
+      state.info = null; selectedRequest = null;
+      openChat(`lan:${id}`);
+      break;
+    }
+    case 'decline-request': {
+      if (!selectedRequest) break;
+      history.declineRequest(selectedRequest);
+      state.info = null; selectedRequest = null;
+      render();
+      break;
+    }
     case 'start-chat': {
       if (!selectedPeer) break;
       if (!onlinePeers.has(selectedPeer.id)) { toast('Device offline'); state.info = null; selectedPeer = null; render(); break; }
