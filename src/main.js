@@ -502,7 +502,11 @@ document.addEventListener('click', (e) => {
       if (!onlinePeers.has(selectedPeer.id)) { toast('Device offline'); state.info = null; selectedPeer = null; render(); break; }
       // The only place selecting a discovered device creates a
       // conversation: an explicit user action, never discovery.
-      history.ensure(selectedPeer.id, selectedPeer.name);
+      // If that person already sent a chat request, accepting it
+      // moves their hidden messages into the conversation instead
+      // of leaving an empty chat beside the request.
+      if (history.getRequest(selectedPeer.id)) history.acceptRequest(selectedPeer.id);
+      else history.ensure(selectedPeer.id, selectedPeer.name);
       const id = selectedPeer.id;
       state.info = null; selectedPeer = null;
       openChat(`lan:${id}`);
