@@ -5,6 +5,8 @@ import {
   createProfile,
   isOnboarded,
   loadProfile,
+  saveProfile,
+  storageUsable,
   updateProfile,
   validatePhotoDataUrl,
 } from '../src/profile.js';
@@ -105,4 +107,46 @@ test('group chat is honestly unavailable: no groups, no fake creation', () => {
   assert.equal(GROUP_CHAT_AVAILABLE, false);
   assert.deepEqual(listGroups(), []);
   assert.deepEqual(createGroup(), { ok: false, reason: 'group-chat-not-available' });
+});
+
+// ---- Task 2 reinforcement: storage errors are recoverable, never a crash ----
+
+function throwingStorage() {
+  return {
+    getItem: () => { throw new Error('storage blocked'); },
+    setItem: () => { throw new Error('storage blocked'); },
+    removeItem: () => { throw new Error('storage blocked'); },
+  };
+}
+
+test('storageUsable reports blocked storage instead of throwing', () => {
+  assert.equal(storageUsable(fakeStorage()), true);
+  assert.equal(storageUsable(throwingStorage()), false);
+});
+
+test('loadProfile returns null (onboarding) when storage throws, it never crashes', () => {
+  assert.equal(loadProfile(throwingStorage()), null);
+});
+
+test('saveProfile fails with a clear message when storage is unavailable', () => {
+  assert.throws(
+    () => saveProfile({ displayName: 'Marie', peerId }, throwingStorage()),
+    /Could not save your profile/,
+  );
+});
+
+test('a valid older identity is still adopted when the mirror save fails', () => {
+  const storage = fakeStorage({
+    'wiwi-lan-identity-v1': JSON.stringify({ id: peerId, name: 'Marie' }),
+  });
+  storage.setItem = () => { throw new Error('storage blocked'); };
+  const adopted = loadProfile(storage);
+  assert.equal(adopted.displayName, 'Marie');
+  assert.equal(adopted.peerId, peerId);
+});
+
+test('migration never throws when storage itself is unavailable', () => {
+  const result = migrateDemoData(throwingStorage());
+  assert.equal(result.storageError, true);
+  assert.equal(result.changed, false);
 });

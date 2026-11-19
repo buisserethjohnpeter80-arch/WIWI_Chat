@@ -65,7 +65,13 @@ export function loadProfile(storage = localStorage) {
         peerId: legacy.id,
         onboarded: true,
       });
-      saveProfile(adopted, storage);
+      try {
+        saveProfile(adopted, storage);
+      } catch {
+        // The mirror write failed (storage unavailable): the adopted
+        // profile still works for this session, and the next save
+        // retries it. Never fail the launch over the mirror.
+      }
       return adopted;
     }
   }
@@ -74,13 +80,19 @@ export function loadProfile(storage = localStorage) {
 
 export function saveProfile(profile, storage = localStorage) {
   const normalized = normalizeProfile(profile);
-  storage.setItem(PROFILE_KEY, JSON.stringify(normalized));
-  // Mirror the LAN identity so LanService and the native plugin use
-  // exactly the same id and advertised name.
-  storage.setItem(
-    LEGACY_IDENTITY_KEY,
-    JSON.stringify({ id: normalized.peerId, name: normalized.displayName }),
-  );
+  try {
+    storage.setItem(PROFILE_KEY, JSON.stringify(normalized));
+    // Mirror the LAN identity so LanService and the native plugin use
+    // exactly the same id and advertised name.
+    storage.setItem(
+      LEGACY_IDENTITY_KEY,
+      JSON.stringify({ id: normalized.peerId, name: normalized.displayName }),
+    );
+  } catch {
+    // Quota exceeded, or storage blocked/disabled: the caller shows
+    // this message and keeps the form, so nothing the user typed is lost.
+    throw new Error('Could not save your profile. Storage is unavailable — check your browser settings and try again.');
+  }
   return normalized;
 }
 
@@ -112,6 +124,21 @@ export function completeOnboarding(storage = localStorage) {
 
 export function isOnboarded(profile) {
   return Boolean(profile && profile.onboarded === true);
+}
+
+// Probe whether local storage can actually be written. Some browsers
+// and phones block it (private mode, disabled cookies/storage): reads
+// then return null and writes throw, so the app must show a
+// recoverable error instead of crashing at startup. The probe key is
+// removed again right away and never holds user data.
+export function storageUsable(storage = localStorage) {
+  try {
+    storage.setItem('__wiwichat-probe__', '1');
+    storage.removeItem('__wiwichat-probe__');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // A profile photo is a data URL chosen by the user on this device.

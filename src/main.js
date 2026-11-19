@@ -17,6 +17,7 @@ import {
   isOnboarded,
   loadProfile,
   saveProfile,
+  storageUsable,
   updateProfile,
   validatePhotoDataUrl,
 } from './profile.js';
@@ -73,11 +74,15 @@ const T = {
   backBtn: 'Back',
   connectTitle: 'Connect locally',
   connectText: 'Connect to the same Wi-Fi network as nearby users to start chatting.',
+  connectPermission: 'Your phone will ask permission to find devices on your local network — allow it to see people nearby. If you said no, turn it on in your phone Settings and try again.',
   wifiLan: 'Wi-Fi LAN',
   wifiLanPrimary: 'Primary connection',
   wifiDirect: 'Wi-Fi Direct',
   wifiDirectLater: 'Backup feature — planned, not available yet',
   startApp: 'Start WIWIchat',
+  storageTitle: 'Storage unavailable',
+  storageText: 'WIWIchat saves your profile on this device, but local storage is blocked. Allow storage for this app in your phone or browser settings, then try again.',
+  tryAgain: 'Try again',
   noConversations: 'No conversations yet',
   noConversationsText: 'Find people nearby and start your first conversation.',
   findNearby: 'Find Nearby People',
@@ -103,9 +108,14 @@ const T = {
 };
 
 // ---- Startup: migrate demo data, load the real profile ----
-migrateDemoData();
+// If local storage cannot be written at all (blocked/disabled on
+// this phone or browser), show a recoverable error screen instead
+// of crashing or silently losing the profile: the user can fix the
+// setting and tap Try again. Nothing below may throw on storage.
+const storageError = !storageUsable();
+if (!storageError) migrateDemoData();
 
-let profile = loadProfile();
+let profile = storageError ? null : loadProfile();
 let onboardingStep = !profile ? 1 : (isOnboarded(profile) ? 0 : 3);
 let draft = profile
   ? { ...profile }
@@ -121,9 +131,12 @@ let lanStatus = native ? 'Starting Wi-Fi LAN…' : 'Chrome preview · Native app
 let lan;
 let scanning = false;
 
+let savedTheme = 'dark';
+try { savedTheme = localStorage.getItem('wiwi-theme') || 'dark'; } catch { /* storage unavailable: keep dark */ }
+
 const state = {
   tab: 'chats', page: 'home', active: null, search: '',
-  connection: 'lan', theme: localStorage.getItem('wiwi-theme') || 'dark',
+  connection: 'lan', theme: savedTheme,
   menu: false, attachments: false, info: null, editingProfile: false,
 };
 
@@ -306,7 +319,7 @@ function onboardingPage() {
   if (onboardingStep === 2) {
     return `<div class="onboarding"><button class="icon-btn onboarding-back" data-action="onboarding-back" aria-label="Back">${icon('arrowBack')}</button><h1>${T.createProfileTitle}</h1><p>${T.createProfileText}</p><form id="onboarding-profile" class="profile-form"><label>${T.displayName}<input name="displayName" maxlength="32" value="${esc(draft.displayName)}" placeholder="${T.displayNamePlaceholder}" required autocomplete="off"></label><label>${T.profilePhoto} <span class="coming">${T.profilePhotoOptional}</span><span class="photo-row">${draft.photo ? `<img class="photo-preview" src="${esc(draft.photo)}" alt="">` : `<span class="avatar profile-avatar">${esc(initials(draft.displayName || 'W'))}</span>`}<span><button type="button" class="inline-button" data-action="choose-photo">${T.choosePhoto}</button>${draft.photo ? ` <button type="button" class="inline-button" data-action="remove-photo">${T.removePhoto}</button>` : ''}</span></span><input id="photo-input" type="file" accept="image/*" hidden></label><label>${T.deviceName}<input name="deviceName" maxlength="32" value="${esc(draft.deviceName)}" autocomplete="off"><small>${T.deviceNameHint}</small></label><p class="device-id">${T.yourDeviceId}: <code>${esc(draft.peerId)}</code></p><button class="primary-btn" type="submit">${T.continueBtn}</button></form><p class="onboarding-steps">Step 2 of 3</p></div>`;
   }
-  return `<div class="onboarding"><button class="icon-btn onboarding-back" data-action="onboarding-back" aria-label="Back">${icon('arrowBack')}</button><h1>${T.connectTitle}</h1><p>${T.connectText}</p><div class="settings-card"><div class="setting-row">${icon('wifiOutline')}<span><strong>${T.wifiLan}</strong><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span></div><div class="setting-row">${icon('radioOutline')}<span><strong>${T.wifiDirect}</strong><small>${T.wifiDirectLater}</small></span><span class="coming">Later</span></div></div>${native ? '' : `<p class="demo-disclaimer">Chrome preview only: LAN discovery needs the installed Android/iOS app. Turn on Wi-Fi and open WIWIchat on both phones.</p>`}<button class="primary-btn" data-action="onboarding-start">${T.startApp}</button><p class="onboarding-steps">Step 3 of 3</p></div>`;
+  return `<div class="onboarding"><button class="icon-btn onboarding-back" data-action="onboarding-back" aria-label="Back">${icon('arrowBack')}</button><h1>${T.connectTitle}</h1><p>${T.connectText}</p><div class="settings-card"><div class="setting-row">${icon('wifiOutline')}<span><strong>${T.wifiLan}</strong><small>${esc(lanStatus)} · ${onlinePeers.size} nearby</small></span></div><div class="setting-row">${icon('radioOutline')}<span><strong>${T.wifiDirect}</strong><small>${T.wifiDirectLater}</small></span><span class="coming">Later</span></div></div>${native ? '' : `<p class="demo-disclaimer">Chrome preview only: LAN discovery needs the installed Android/iOS app. Turn on Wi-Fi and open WIWIchat on both phones.</p>`}<p class="info-text">${T.connectPermission}</p><button class="primary-btn" data-action="onboarding-start">${T.startApp}</button><p class="onboarding-steps">Step 3 of 3</p></div>`;
 }
 
 // ---- Home pages (no demo data anywhere) ----
@@ -319,7 +332,7 @@ function chatsPage() {
 
 function contactsPage() {
   const peers = [...onlinePeers.values()];
-  return `${header('Contacts')}<main class="scroll"><div class="section-heading"><span class="online-dot"></span> ${T.devicesOnLan} <span>${peers.length} found</span></div>${scanning ? `<div class="empty-state"><ion-spinner></ion-spinner><p>${T.searching}</p></div>` : peers.length ? peers.map((p) => `<button class="contact-row" data-open="lan:${esc(p.id)}">${avatar({ name: p.name, color: '#168fff', online: true })}<span><strong>${esc(p.name)}</strong><small>Wi-Fi LAN · Device found</small></span><span class="lan-pill">LAN</span></button>`).join('') : `<div class="empty-state">${icon('peopleOutline', 'empty-icon')}<h2>${T.noContacts}</h2><p>${T.noContactsText}</p><button class="primary-btn" data-action="scan">${T.discoverDevices}</button></div>`}${!scanning && !peers.length ? `<div class="empty-state"><h2>${T.noDevices}</h2><p>${T.noDevicesText}</p><button class="inline-button" data-action="scan">${T.retry}</button></div>` : ''}<div class="section-heading">${sicon('peopleOutline', 'section-icon')} Groups <span>${GROUP_CHAT_AVAILABLE ? '' : 'Planned'}</span></div><div class="empty-state"><h2>${T.noGroups}</h2><p>${T.noGroupsText}</p><button class="inline-button" data-action="create-group">${T.createGroup}</button></div></main><button class="fab" data-action="scan" aria-label="Rescan devices">${sicon('wifiOutline')}</button>${nav()}`;
+  return `${header('Contacts')}<main class="scroll"><div class="section-heading"><span class="online-dot"></span> ${T.devicesOnLan} <span>${peers.length} found</span></div>${scanning ? `<div class="empty-state"><ion-spinner></ion-spinner><p>${T.searching}</p></div>` : peers.length ? peers.map((p) => `<button class="contact-row" data-open="lan:${esc(p.id)}">${avatar({ name: p.name, color: '#168fff', online: true })}<span><strong>${esc(p.name)}</strong><small>Wi-Fi LAN · Device found</small></span><span class="lan-pill">LAN</span></button>`).join('') : `<div class="empty-state">${icon('peopleOutline', 'empty-icon')}<h2>${T.noContacts}</h2><p>${T.noContactsText}</p><button class="primary-btn" data-action="scan">${T.discoverDevices}</button></div>`}${!scanning && !peers.length ? `<div class="empty-state"><h2>${T.noDevices}</h2><p>${T.noDevicesText}</p><button class="inline-button" data-action="scan">${T.retry}</button>${native && !lanStatus.startsWith('Connected') && !lanStatus.startsWith('Starting') ? `<p class="info-text">${T.connectPermission}</p>` : ''}</div>` : ''}<div class="section-heading">${sicon('peopleOutline', 'section-icon')} Groups <span>${GROUP_CHAT_AVAILABLE ? '' : 'Planned'}</span></div><div class="empty-state"><h2>${T.noGroups}</h2><p>${T.noGroupsText}</p><button class="inline-button" data-action="create-group">${T.createGroup}</button></div></main><button class="fab" data-action="scan" aria-label="Rescan devices">${sicon('wifiOutline')}</button>${nav()}`;
 }
 
 // ---- Settings sub-pages: every row opens real logic, not a dead end. ----
@@ -372,6 +385,10 @@ const modal = () => {
 
 function render() {
   document.documentElement.dataset.theme = state.theme;
+  if (storageError) {
+    $('#app').innerHTML = `<div class="shell"><div class="onboarding"><div class="onboarding-hero"><img class="brand-icon onboarding-mark" src="/logo-icon.svg" alt="WIWIchat"><h1>${T.storageTitle}</h1><p>${T.storageText}</p></div><button class="primary-btn" data-action="storage-retry">${T.tryAgain}</button></div></div>`;
+    return;
+  }
   if (isOnboarding()) {
     $('#app').innerHTML = `<div class="shell">${onboardingPage()}</div>`;
     return;
@@ -416,11 +433,14 @@ document.addEventListener('click', (e) => {
     case 'cancel-edit-profile': state.editingProfile = false; draft = profile ? { ...profile } : draft; render(); break;
     case 'choose-photo': $('#photo-input')?.click(); break;
     case 'remove-photo': draft.photo = null; if (profile && state.editingProfile) draft = { ...profile, photo: null }; render(); break;
+    case 'storage-retry': location.reload(); break;
     case 'onboarding-next': onboardingStep = 2; render(); break;
     case 'onboarding-back': onboardingStep = Math.max(1, onboardingStep - 1); render(); break;
     case 'onboarding-start': {
       if (!profile) break;
-      profile = completeOnboarding();
+      try {
+        profile = completeOnboarding();
+      } catch (err) { toast(String(err?.message || err)); break; }
       identity = { id: profile.peerId, name: profile.displayName };
       onboardingStep = 0;
       render();
@@ -440,7 +460,7 @@ document.addEventListener('click', (e) => {
       state.page = action.dataset.action; state.confirmClear = false; render(); break;
     case 'set-theme': {
       state.theme = action.dataset.theme === 'light' ? 'light' : 'dark';
-      localStorage.setItem('wiwi-theme', state.theme);
+      try { localStorage.setItem('wiwi-theme', state.theme); } catch { /* storage unavailable: theme applies for this session only */ }
       render();
       break;
     }
@@ -544,5 +564,5 @@ document.addEventListener('change', (e) => {
 });
 
 render();
-if (!isOnboarding()) void startLan();
-else if (onboardingStep === 3 && profile) void startLan();
+if (!storageError && !isOnboarding()) void startLan();
+else if (!storageError && onboardingStep === 3 && profile) void startLan();
